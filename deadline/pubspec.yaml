@@ -1,0 +1,56 @@
+name: deadline
+description: Offline-first deadline tracker that sorts by what is due next.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # local store
+  sqflite: ^2.3.3
+  path: ^1.9.0
+  shared_preferences: ^2.2.3
+  uuid: ^4.4.0
+
+  # sync
+  http: ^1.2.1
+  connectivity_plus: ^6.0.5
+  google_sign_in: ^6.2.1
+
+  # reminders
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+  flutter_timezone: ^3.0.1
+
+  intl: ^0.19.0
+
+  # home screen widget
+  home_widget: ^0.6.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#0E131B"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+
+flutter_native_splash:
+  color: "#0E131B"
+  image: assets/icon/icon.png
+  android_12:
+    color: "#0E131B"
+    image: assets/icon/icon.png
