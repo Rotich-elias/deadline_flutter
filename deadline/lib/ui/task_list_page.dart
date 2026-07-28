@@ -12,10 +12,16 @@ import 'task_card.dart';
 import 'task_form_sheet.dart';
 
 class TaskListPage extends StatelessWidget {
-  const TaskListPage({super.key, required this.store, required this.sync});
+  const TaskListPage({
+    super.key,
+    required this.store,
+    required this.sync,
+    required this.appTheme,
+  });
 
   final TaskStore store;
   final SyncService sync;
+  final AppTheme appTheme;
 
   Future<void> _create(BuildContext context) async {
     final t = await showTaskForm(context, existingTags: store.tags);
@@ -52,7 +58,7 @@ class TaskListPage extends StatelessWidget {
             final tasks = store.visible;
             return Column(
               children: [
-                _Header(store: store, sync: sync),
+                _Header(store: store, sync: sync, appTheme: appTheme),
                 if (store.tags.isNotEmpty)
                   TagFilterRow(
                     tags: store.tags,
@@ -127,9 +133,11 @@ class TaskListPage extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.store, required this.sync});
+  const _Header(
+      {required this.store, required this.sync, required this.appTheme});
   final TaskStore store;
   final SyncService sync;
+  final AppTheme appTheme;
 
   @override
   Widget build(BuildContext context) {
@@ -144,7 +152,7 @@ class _Header extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Deadlines',
                   style: TextStyle(
                     fontSize: 26,
@@ -157,10 +165,10 @@ class _Header extends StatelessWidget {
                 Row(
                   children: [
                     Text('$open open',
-                        style: const TextStyle(
-                            fontSize: 13, color: Ink0.muted)),
+                        style:
+                            TextStyle(fontSize: 13, color: Ink0.muted)),
                     if (overdue > 0) ...[
-                      const Text(' · ',
+                      Text(' · ',
                           style: TextStyle(fontSize: 13, color: Ink0.muted)),
                       Text('$overdue overdue',
                           style: TextStyle(
@@ -175,7 +183,7 @@ class _Header extends StatelessWidget {
           ),
           SyncButton(sync: sync),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Ink0.muted),
+            icon: Icon(Icons.more_vert, color: Ink0.muted),
             color: Ink0.surfaceHi,
             onSelected: (v) {
               if (v == 'completed') {
@@ -184,6 +192,8 @@ class _Header extends StatelessWidget {
                 showSyncSettings(context, sync);
               } else if (v == 'digest') {
                 showDigestSettings(context, store);
+              } else if (v == 'appearance') {
+                showAppearanceSettings(context, appTheme);
               }
             },
             itemBuilder: (_) => [
@@ -196,6 +206,8 @@ class _Header extends StatelessWidget {
               const PopupMenuItem(
                   value: 'digest', child: Text('Daily digest')),
               const PopupMenuItem(value: 'sync', child: Text('Sync settings')),
+              const PopupMenuItem(
+                  value: 'appearance', child: Text('Appearance')),
             ],
           ),
         ],
@@ -225,7 +237,7 @@ class _GroupHeader extends StatelessWidget {
           const SizedBox(width: 9),
           Text(
             label.toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.3,
@@ -234,9 +246,9 @@ class _GroupHeader extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text('$count',
-              style: const TextStyle(fontSize: 11.5, color: Ink0.line)),
+              style: TextStyle(fontSize: 11.5, color: Ink0.line)),
           const SizedBox(width: 10),
-          const Expanded(child: Divider(height: 1, color: Ink0.line)),
+          Expanded(child: Divider(height: 1, color: Ink0.line)),
         ],
       ),
     );
@@ -257,7 +269,7 @@ class _Empty extends StatelessWidget {
             Icon(Icons.event_available,
                 size: 44, color: Urgency.week.color.withOpacity(0.6)),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'Nothing due',
               style: TextStyle(
                   fontSize: 17,
@@ -265,7 +277,7 @@ class _Empty extends StatelessWidget {
                   color: Ink0.text),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Add an assignment or lab and it will sit at the top of the '
               'list as the date gets close.',
               textAlign: TextAlign.center,

@@ -20,16 +20,23 @@ Future<void> main() async {
   final store = TaskStore(db);
   final notesStore = NotesStore(db);
   final sync = SyncService(db, store, notesStore);
+  final appTheme = AppTheme();
   Notifications.instance.onExternalChange = () => unawaited(store.load());
 
   await store.loadDigestSettings();
   await store.load();
   await notesStore.load();
   await sync.loadSettings();
+  await appTheme.load();
   await Notifications.instance.resyncAll(store.tasks);
   unawaited(sync.syncNow());
 
-  runApp(DeadlineApp(store: store, notesStore: notesStore, sync: sync));
+  runApp(DeadlineApp(
+    store: store,
+    notesStore: notesStore,
+    sync: sync,
+    appTheme: appTheme,
+  ));
 }
 
 class DeadlineApp extends StatefulWidget {
@@ -38,10 +45,12 @@ class DeadlineApp extends StatefulWidget {
     required this.store,
     required this.notesStore,
     required this.sync,
+    required this.appTheme,
   });
   final TaskStore store;
   final NotesStore notesStore;
   final SyncService sync;
+  final AppTheme appTheme;
 
   @override
   State<DeadlineApp> createState() => _DeadlineAppState();
@@ -72,16 +81,32 @@ class _DeadlineAppState extends State<DeadlineApp>
   }
 
   @override
+  void didChangePlatformBrightness() {
+    if (widget.appTheme.mode == ThemeMode.system) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Deadlines',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
-      home: HomeShell(
-        store: widget.store,
-        notesStore: widget.notesStore,
-        sync: widget.sync,
-      ),
+    return ListenableBuilder(
+      listenable: widget.appTheme,
+      builder: (context, _) {
+        widget.appTheme.syncPalette(
+          WidgetsBinding.instance.platformDispatcher.platformBrightness,
+        );
+        return MaterialApp(
+          title: 'Deadlines',
+          debugShowCheckedModeBanner: false,
+          theme: buildTheme(Brightness.light),
+          darkTheme: buildTheme(Brightness.dark),
+          themeMode: widget.appTheme.mode,
+          home: HomeShell(
+            store: widget.store,
+            notesStore: widget.notesStore,
+            sync: widget.sync,
+            appTheme: widget.appTheme,
+          ),
+        );
+      },
     );
   }
 }

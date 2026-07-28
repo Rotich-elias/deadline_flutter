@@ -155,7 +155,7 @@ class _TaskFormState extends State<_TaskForm> {
             const SizedBox(height: 18),
             Text(
               editing ? 'Edit task' : 'New task',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 19, fontWeight: FontWeight.w700, color: Ink0.text),
             ),
             const SizedBox(height: 16),
@@ -210,7 +210,7 @@ class _TaskFormState extends State<_TaskForm> {
               ),
             ],
             const SizedBox(height: 18),
-            const Text('Due',
+            Text('Due',
                 style: TextStyle(
                     fontSize: 12,
                     color: Ink0.muted,
@@ -261,7 +261,7 @@ class _TaskFormState extends State<_TaskForm> {
               ],
             ),
             const SizedBox(height: 18),
-            const Text('Repeats',
+            Text('Repeats',
                 style: TextStyle(
                     fontSize: 12,
                     color: Ink0.muted,
@@ -281,7 +281,7 @@ class _TaskFormState extends State<_TaskForm> {
               ],
             ),
             const SizedBox(height: 18),
-            const Text('Remind me',
+            Text('Remind me',
                 style: TextStyle(
                     fontSize: 12,
                     color: Ink0.muted,
@@ -358,7 +358,7 @@ class _PickerButton extends StatelessWidget {
             Icon(icon, size: 16, color: Ink0.muted),
             const SizedBox(width: 8),
             Text(label,
-                style: const TextStyle(fontSize: 14, color: Ink0.text)),
+                style: TextStyle(fontSize: 14, color: Ink0.text)),
           ],
         ),
       ),
@@ -377,8 +377,8 @@ class _Quick extends StatelessWidget {
       label: Text(label, style: const TextStyle(fontSize: 12.5)),
       onPressed: onTap,
       backgroundColor: Ink0.surfaceHi,
-      side: const BorderSide(color: Ink0.line),
-      labelStyle: const TextStyle(color: Ink0.text),
+      side: BorderSide(color: Ink0.line),
+      labelStyle: TextStyle(color: Ink0.text),
       shape:
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
@@ -401,7 +401,7 @@ class _SelectableChip extends StatelessWidget {
       backgroundColor: Ink0.surfaceHi,
       selectedColor: Ink0.line,
       side: BorderSide(color: selected ? Colors.transparent : Ink0.line),
-      labelStyle: const TextStyle(color: Ink0.text),
+      labelStyle: TextStyle(color: Ink0.text),
       shape:
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );

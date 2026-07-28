@@ -32,7 +32,7 @@ class NoteCard extends StatelessWidget {
                 if ((note.tag ?? '').trim().isNotEmpty) ...[
                   Text(
                     note.tag!.trim().toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.6,
@@ -43,7 +43,7 @@ class NoteCard extends StatelessWidget {
                 ],
                 Text(
                   note.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     height: 1.25,
                     fontWeight: FontWeight.w600,
@@ -56,8 +56,8 @@ class NoteCard extends StatelessWidget {
                     note.body!.trim(),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 13.5, color: Ink0.muted, height: 1.35),
+                    style:
+                        TextStyle(fontSize: 13.5, color: Ink0.muted, height: 1.35),
                   ),
                 ],
                 const SizedBox(height: 10),
@@ -65,11 +65,11 @@ class NoteCard extends StatelessWidget {
                   children: [
                     Text(
                       DateFormat('d MMM, h:mm a').format(note.updatedAt.toLocal()),
-                      style: const TextStyle(fontSize: 12, color: Ink0.muted),
+                      style: TextStyle(fontSize: 12, color: Ink0.muted),
                     ),
                     if (note.dirty) ...[
                       const SizedBox(width: 8),
-                      const Icon(Icons.cloud_off, size: 13, color: Ink0.muted),
+                      Icon(Icons.cloud_off, size: 13, color: Ink0.muted),
                     ],
                   ],
                 ),

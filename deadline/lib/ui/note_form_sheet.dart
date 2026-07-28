@@ -103,7 +103,7 @@ class _NoteFormState extends State<_NoteForm> {
             const SizedBox(height: 18),
             Text(
               editing ? 'Edit note' : 'New note',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 19, fontWeight: FontWeight.w700, color: Ink0.text),
             ),
             const SizedBox(height: 16),
@@ -151,8 +151,8 @@ class _NoteFormState extends State<_NoteForm> {
                         setState(() {});
                       },
                       backgroundColor: Ink0.surfaceHi,
-                      side: const BorderSide(color: Ink0.line),
-                      labelStyle: const TextStyle(color: Ink0.text),
+                      side: BorderSide(color: Ink0.line),
+                      labelStyle: TextStyle(color: Ink0.text),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20)),
                     ),

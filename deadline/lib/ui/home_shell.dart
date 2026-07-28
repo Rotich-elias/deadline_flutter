@@ -16,11 +16,13 @@ class HomeShell extends StatefulWidget {
     required this.store,
     required this.notesStore,
     required this.sync,
+    required this.appTheme,
   });
 
   final TaskStore store;
   final NotesStore notesStore;
   final SyncService sync;
+  final AppTheme appTheme;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -35,7 +37,11 @@ class _HomeShellState extends State<HomeShell> {
       body: IndexedStack(
         index: _index,
         children: [
-          TaskListPage(store: widget.store, sync: widget.sync),
+          TaskListPage(
+            store: widget.store,
+            sync: widget.sync,
+            appTheme: widget.appTheme,
+          ),
           NotesListPage(store: widget.notesStore, sync: widget.sync),
         ],
       ),

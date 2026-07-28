@@ -71,13 +71,13 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Sync',
+            Text('Sync',
                 style: TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.w700,
                     color: Ink0.text)),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'The app works fully offline. Turn on sync to keep the same '
               'list across your devices.',
               style: TextStyle(fontSize: 13, color: Ink0.muted, height: 1.4),
@@ -115,7 +115,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                   },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    side: const BorderSide(color: Ink0.line),
+                    side: BorderSide(color: Ink0.line),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -129,7 +129,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             if (_method != SyncMethod.off) ...[
               const SizedBox(height: 14),
               Text(_status,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12.5, color: Ink0.muted, height: 1.4)),
             ],
           ],
@@ -155,7 +155,7 @@ class _MethodChip extends StatelessWidget {
       backgroundColor: Ink0.surfaceHi,
       selectedColor: Ink0.line,
       side: BorderSide(color: selected ? Colors.transparent : Ink0.line),
-      labelStyle: const TextStyle(color: Ink0.text),
+      labelStyle: TextStyle(color: Ink0.text),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
   }
@@ -195,11 +195,11 @@ class _DriveSection extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(Icons.account_circle, color: Ink0.muted, size: 28),
+              Icon(Icons.account_circle, color: Ink0.muted, size: 28),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(account.email,
-                    style: const TextStyle(fontSize: 13.5, color: Ink0.text)),
+                    style: TextStyle(fontSize: 13.5, color: Ink0.text)),
               ),
             ],
           ),
@@ -212,7 +212,7 @@ class _DriveSection extends StatelessWidget {
                 onPressed: () => sync.syncNow(),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: Ink0.line),
+                  side: BorderSide(color: Ink0.line),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
@@ -225,7 +225,7 @@ class _DriveSection extends StatelessWidget {
                 onPressed: () => sync.signOutOfGoogle(),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: Ink0.line),
+                  side: BorderSide(color: Ink0.line),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
@@ -275,7 +275,7 @@ class _ServerSection extends StatelessWidget {
                 onPressed: sync.configured ? () => sync.syncNow() : null,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: Ink0.line),
+                  side: BorderSide(color: Ink0.line),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
@@ -301,6 +301,110 @@ class _ServerSection extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+Future<void> showAppearanceSettings(BuildContext context, AppTheme appTheme) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Ink0.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _AppearanceSheet(appTheme: appTheme),
+  );
+}
+
+class _AppearanceSheet extends StatelessWidget {
+  const _AppearanceSheet({required this.appTheme});
+  final AppTheme appTheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 22,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: ListenableBuilder(
+        listenable: appTheme,
+        builder: (context, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Appearance',
+                style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: Ink0.text)),
+            const SizedBox(height: 16),
+            _ThemeOption(
+              label: 'System',
+              icon: Icons.brightness_auto,
+              selected: appTheme.mode == ThemeMode.system,
+              onTap: () => appTheme.setMode(ThemeMode.system),
+            ),
+            const SizedBox(height: 8),
+            _ThemeOption(
+              label: 'Light',
+              icon: Icons.light_mode_outlined,
+              selected: appTheme.mode == ThemeMode.light,
+              onTap: () => appTheme.setMode(ThemeMode.light),
+            ),
+            const SizedBox(height: 8),
+            _ThemeOption(
+              label: 'Dark',
+              icon: Icons.dark_mode_outlined,
+              selected: appTheme.mode == ThemeMode.dark,
+              onTap: () => appTheme.setMode(ThemeMode.dark),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeOption extends StatelessWidget {
+  const _ThemeOption({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? Ink0.surfaceHi : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? Ink0.text : Ink0.line),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: Ink0.text),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label,
+                  style: TextStyle(fontSize: 14.5, color: Ink0.text)),
+            ),
+            if (selected) Icon(Icons.check, size: 18, color: Ink0.text),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -350,13 +454,13 @@ class _DigestSheetState extends State<_DigestSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Daily digest',
+          Text('Daily digest',
               style: TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w700,
                   color: Ink0.text)),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'One notification each morning with how many tasks are open '
             'and overdue — instead of a ping for every reminder.',
             style: TextStyle(fontSize: 13, color: Ink0.muted, height: 1.4),
@@ -367,7 +471,7 @@ class _DigestSheetState extends State<_DigestSheet> {
             value: _enabled,
             onChanged: (v) => setState(() => _enabled = v),
             activeThumbColor: Ink0.text,
-            title: const Text('Send daily digest',
+            title: Text('Send daily digest',
                 style: TextStyle(color: Ink0.text, fontSize: 14)),
           ),
           const SizedBox(height: 6),

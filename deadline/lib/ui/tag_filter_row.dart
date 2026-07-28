@@ -62,7 +62,7 @@ class TagChip extends StatelessWidget {
       backgroundColor: Ink0.surface,
       selectedColor: Ink0.line,
       side: BorderSide(color: selected ? Colors.transparent : Ink0.line),
-      labelStyle: const TextStyle(color: Ink0.text),
+      labelStyle: TextStyle(color: Ink0.text),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
   }

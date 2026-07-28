@@ -84,7 +84,7 @@ class TaskCard extends StatelessWidget {
                             task.notes!.trim(),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13, color: Ink0.muted, height: 1.3),
                           ),
                         ],
@@ -97,7 +97,7 @@ class TaskCard extends StatelessWidget {
                             const SizedBox(width: 5),
                             Text(
                               _whenLabel(task.dueLocal),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 12.5,
                                   color: Ink0.muted,
                                   letterSpacing: 0.1),
@@ -110,7 +110,7 @@ class TaskCard extends StatelessWidget {
                             ],
                             if (task.dirty) ...[
                               const SizedBox(width: 8),
-                              const Icon(Icons.cloud_off,
+                              Icon(Icons.cloud_off,
                                   size: 13, color: Ink0.muted),
                             ],
                           ],

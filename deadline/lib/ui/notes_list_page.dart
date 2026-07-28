@@ -6,6 +6,7 @@ import '../sync/sync_service.dart';
 import '../theme.dart';
 import 'note_card.dart';
 import 'note_form_sheet.dart';
+import 'note_view_page.dart';
 import 'sync_button.dart';
 import 'tag_filter_row.dart';
 
@@ -20,10 +21,10 @@ class NotesListPage extends StatelessWidget {
     if (n != null) await store.add(n);
   }
 
-  Future<void> _edit(BuildContext context, Note note) async {
-    final n = await showNoteForm(context,
-        existing: note, existingTags: store.tags);
-    if (n != null) await store.save(n);
+  void _open(BuildContext context, Note note) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => NoteViewPage(store: store, noteId: note.id),
+    ));
   }
 
   Future<void> _delete(BuildContext context, Note note) async {
@@ -85,7 +86,7 @@ class NotesListPage extends StatelessWidget {
                                   onDismissed: (_) => _delete(context, n),
                                   child: NoteCard(
                                     note: n,
-                                    onEdit: () => _edit(context, n),
+                                    onEdit: () => _open(context, n),
                                   ),
                                 ),
                             ],
@@ -121,7 +122,7 @@ class _Header extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Notes',
                   style: TextStyle(
                     fontSize: 26,
@@ -132,7 +133,7 @@ class _Header extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text('${store.notes.length} saved',
-                    style: const TextStyle(fontSize: 13, color: Ink0.muted)),
+                    style: TextStyle(fontSize: 13, color: Ink0.muted)),
               ],
             ),
           ),
@@ -148,20 +149,20 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 40),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.sticky_note_2_outlined, size: 44, color: Ink0.muted),
-            SizedBox(height: 14),
+            const SizedBox(height: 14),
             Text(
               'No notes yet',
               style: TextStyle(
                   fontSize: 17, fontWeight: FontWeight.w600, color: Ink0.text),
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 6),
             Text(
               'Anything worth remembering that doesn\'t need a deadline '
               'goes here.',
