@@ -94,7 +94,7 @@ class _DeadlineAppState extends State<DeadlineApp>
           WidgetsBinding.instance.platformDispatcher.platformBrightness,
         );
         return MaterialApp(
-          title: 'Deadlines',
+          title: 'Deadlines&Notes',
           debugShowCheckedModeBanner: false,
           theme: buildTheme(Brightness.light),
           darkTheme: buildTheme(Brightness.dark),

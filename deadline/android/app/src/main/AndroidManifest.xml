@@ -8,7 +8,7 @@
     <!-- Lets the closest-to-due reminder surface the app over the lock screen. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <application
-        android:label="deadline"
+        android:label="Deadlines&amp;Notes"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

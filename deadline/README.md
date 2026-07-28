@@ -1,4 +1,4 @@
-# Deadlines
+# Deadlines&Notes
 
 A task list that sorts itself by what is due next and colours each item by how
 close it is. Everything is stored on the device first; syncing — to a Laravel
