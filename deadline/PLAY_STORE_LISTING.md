@@ -30,8 +30,9 @@ resume, so a card shifts from green to amber to red without you touching it.
 Reminders
 Each task schedules two local notifications — one day before and one hour
 before. They're rescheduled on every edit, cancelled when a task completes or
-is deleted, and restored after a reboot. The closest-due reminder can surface
-over the lock screen so you never miss it.
+is deleted, and restored after a reboot. If Android has not granted exact-alarm
+permission, reminders still arrive but the system may delay them by a few
+minutes; the app shows how to allow exact timing in Reminders & digest.
 
 Notes
 Keep lightweight notes alongside your tasks, with the same colour/closest-first
@@ -50,6 +51,7 @@ Sync (optional, you choose the backend)
 Privacy
 No ads, no analytics, no data leaves the device unless you explicitly enable
 sync. When sync is on, tasks and notes go only to the destination you pick.
+Server tokens are stored in Android's secure storage.
 
 ## Tags / keywords (for ASO — used in description)
 deadline, task list, to-do, reminders, offline, notes, urgency, colour coded

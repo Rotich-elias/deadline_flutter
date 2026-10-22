@@ -17,13 +17,15 @@ class Task extends Model
 
     protected $fillable = [
         'id', 'user_id', 'title', 'notes', 'tag',
-        'due_at', 'done', 'deleted', 'repeat', 'updated_at', 'created_at',
+        'due_at', 'done', 'deleted', 'repeat',
+        'updated_at', 'created_at', 'synced_at',
     ];
 
     protected $casts = [
         'due_at' => 'datetime',
         'updated_at' => 'datetime',
         'created_at' => 'datetime',
+        'synced_at' => 'datetime',
         'done' => 'boolean',
         'deleted' => 'boolean',
         'repeat' => 'integer',

@@ -17,9 +17,21 @@ extension RepeatRule on Repeat {
         Repeat.none => from,
         Repeat.daily => from.add(const Duration(days: 1)),
         Repeat.weekly => from.add(const Duration(days: 7)),
-        Repeat.monthly => DateTime(from.year, from.month + 1, from.day,
-            from.hour, from.minute),
+        Repeat.monthly => _nextMonthly(from),
       };
+
+  /// Adds one calendar month, clamping to the last valid day so that a task
+  /// due on 31 January repeats on 28/29 February rather than rolling into
+  /// March. Keeps the input's UTC/local flag.
+  DateTime _nextMonthly(DateTime from) {
+    final year = from.month == 12 ? from.year + 1 : from.year;
+    final month = from.month == 12 ? 1 : from.month + 1;
+    final lastDay = DateTime.utc(year, month + 1, 0).day;
+    final day = from.day > lastDay ? lastDay : from.day;
+    return from.isUtc
+        ? DateTime.utc(year, month, day, from.hour, from.minute)
+        : DateTime(year, month, day, from.hour, from.minute);
+  }
 }
 
 /// Minutes-before-due presets offered in the reminder picker.
@@ -133,9 +145,27 @@ class Task {
   }
 
   static List<int> _parseReminders(Object? raw) {
-    final s = (raw as String?) ?? '';
+    final s = raw is String ? raw : '';
     if (s.isEmpty) return List.of(defaultReminderMinutes);
-    return s.split(',').map(int.parse).toList();
+
+    final parsed = <int>[];
+    for (final part in s.split(',')) {
+      final value = int.tryParse(part.trim());
+      // Ignore corrupt rows instead of crashing the whole list. A year is the
+      // largest offset the picker can produce.
+      if (value != null && value >= 0 && value <= 525600) {
+        parsed.add(value);
+      }
+    }
+    parsed.sort();
+    return parsed.isEmpty ? List.of(defaultReminderMinutes) : parsed;
+  }
+
+  static Repeat _parseRepeat(Object? raw) {
+    final index = raw is int ? raw : 0;
+    return index >= 0 && index < Repeat.values.length
+        ? Repeat.values[index]
+        : Repeat.none;
   }
 
   Map<String, Object?> toRow() => {
@@ -164,7 +194,7 @@ class Task {
             isUtc: true),
         deleted: (r['deleted'] as int) == 1,
         dirty: (r['dirty'] as int) == 1,
-        repeat: Repeat.values[(r['repeat'] as int?) ?? 0],
+        repeat: _parseRepeat(r['repeat']),
         reminderMinutes: _parseReminders(r['reminders']),
       );
 
@@ -189,7 +219,7 @@ class Task {
         done: j['done'] == true || j['done'] == 1,
         deleted: j['deleted'] == true || j['deleted'] == 1,
         updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
-        repeat: Repeat.values[(j['repeat'] as int?) ?? 0],
+        repeat: _parseRepeat(j['repeat']),
         dirty: false,
       );
 }

@@ -26,19 +26,30 @@ repo so future releases repeat the same steps.
 | Version code | `1` (the `+1` in the version string) |
 | App name shown on device | `Deadlines&Notes` |
 | minSdk | 24 (Android 7.0) |
-| targetSdk | 36 (Android 16, Play-required floor met) |
+| targetSdk | 36 (Android 16) |
 | compileSdk | 36 |
 
-The targetSdk already satisfies Play's current requirement (new apps must target
-API 35+). Do not lower it.
+The targetSdk satisfies Play's requirement for new apps and updates since
+31 August 2026 (API 36). Do not lower it.
 
 ## 2. Verify the release artifact (do this before every upload)
+
+Always start from a clean build. Flutter can otherwise leave a stale
+`libapp.so` inside an existing AAB, which makes the published app differ from
+your source.
 
 ```bash
 cd /home/smith/Desktop/New\ Folder/deadline_flutter/deadline
 flutter pub get
+flutter analyze
+flutter test
+flutter clean
 flutter build appbundle --release
 ```
+
+The release build **fails on purpose** if `android/key.properties` is missing
+or references a missing keystore, so a Play upload can never be signed with the
+debug key.
 
 Expected: `✓ Built build/app/outputs/bundle/release/app-release.aab`. Verify it:
 
@@ -48,8 +59,7 @@ ls -lh build/app/outputs/bundle/release/app-release.aab
 jarsigner -verify build/app/outputs/bundle/release/app-release.aab | tail -3
 ```
 
-You should see `jar verified.`. The AAB is ~45 MB and includes native debug
-symbols, so Play Console crash reports will be symbolicated automatically.
+You should see `jar verified.`.
 
 ## 3. Bump the version for updates
 
@@ -96,24 +106,32 @@ sync paths exist. Declare accordingly:
   *user's own* Google Drive under their own account; that's user-directed and
   does not count as sharing by your app.)
 - **Data handling:** data can be deleted by the user (turn off sync / delete app
-  / clear app data). Encryption in transit: yes (HTTPS to Drive/Laravel).
-  Encryption at rest: device-level only (no extra app encryption).
-- **Privacy policy URL:** paste your hosted policy URL here.
+  / clear app data). Encryption in transit: yes (HTTPS to Drive/Laravel; the app
+  rejects plain-HTTP server URLs). Encryption at rest: device-level only (no
+  extra app encryption), except the optional server token, which is stored in
+  Android Keystore-backed secure storage.
+- **Auto Backup:** disabled for this app, so Android cloud backup and
+  device-to-device transfer do not copy the local database.
+- **Privacy policy URL:** paste your hosted policy URL here. A ready-to-host
+  copy is in `PRIVACY_POLICY.md`; the same text is available in-app under
+  **menu → Privacy policy**. Any static host works (GitHub Pages, your server),
+  and the URL must load without a login.
 
 Declared permissions that need justification in this form / review:
 - `POST_NOTIFICATIONS` — for deadline reminders (user-facing, optional).
-- `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM` — reminders must fire at the
-  exact deadline time. **In Play Console, fill the "Exact alarm permission"
-  declaration form with the justification:** "The app schedules local reminder
-  notifications for user-created deadlines at exact user-chosen times."
+- `SCHEDULE_EXACT_ALARM` — optional exact delivery of user-created reminders.
+  Android 14+ treats this as a user-granted permission; the app requests it
+  only from **Reminders & digest**, never on launch, and falls back to inexact
+  alarms when it is denied. In Play Console, fill the "Exact alarm permission"
+  declaration with: "The app schedules local reminder notifications for
+  user-created deadlines at the exact time the user chose."
 - `RECEIVE_BOOT_COMPLETED` — reschedule reminders after reboot (no data
   collected).
-- `USE_FULL_SCREEN_INTENT` — show the closest-due reminder over the lock
-  screen. **Fill the full-screen-intent declaration form** with: "Show an
-  urgent deadline reminder over the lock screen so the user sees it immediately
-  when due." (Play scrutinises this; if rejected, remove the permission and
-  the lock-screen behaviour.)
 - `INTERNET` — optional sync only.
+
+This build deliberately does **not** request `USE_EXACT_ALARM` or
+`USE_FULL_SCREEN_INTENT`: both are restricted to alarm-clock/calling apps and
+would put a deadline tracker at risk of rejection. Do not add them back.
 
 ## 6. Google Cloud — make Google Drive sync work in the released app
 
@@ -153,11 +171,13 @@ Google Cloud Console → your project → **APIs & Services → Credentials**:
 1. Enable **Google Drive API**.
 2. **OAuth consent screen**:
    - User type: External.
-   - Add the Drive scopes? Scopes are requested at runtime by the app
-     (`https://www.googleapis.com/auth/drive.appdata`). You only need to
-     publish the app as verified eventually; while testing add your own Google
-     account as a **Test user** so sign-in works without verification.
-   - App name, support email, developer contact.
+   - The app requests `https://www.googleapis.com/auth/drive.appdata` at
+     runtime. This is a **non-sensitive** scope, so it does not go through
+     Google's sensitive/restricted-scope verification.
+   - App name, support email, developer contact, privacy policy URL.
+   - While testing, add your own Google account as a **Test user**. Before
+     anyone outside that list can sign in, click **Publish app** on the OAuth
+     consent screen (publishing is required even though verification is not).
 3. **Credentials → Create credentials → OAuth client ID → Android**:
    - Name: `Deadlines&Notes (upload key)`
    - Package name: `com.deadline.app.deadline`
@@ -172,11 +192,14 @@ Google Cloud Console → your project → **APIs & Services → Credentials**:
 No `google-services.json` is needed — the `google_sign_in` plugin matches by
 package name + fingerprint automatically.
 
-### 6.4 Testing before verification
+### 6.4 Testing before publishing the consent screen
 
-Until OAuth consent is verified, only test users can sign in. Keep your own
-account as a test user. Avoid shipping Drive sync as a headline feature until
-verification is complete, or users will see "Access blocked".
+Only accounts listed as test users can sign in while the consent screen is in
+Testing. Add your own account, test Drive sync, then publish the consent screen
+so any user can sign in. Users may still see an "unverified app" warning
+because the app has no sensitive scopes; the warning can be dismissed. Avoid
+shipping Drive sync as a headline feature until you have tested the Play-signed
+build.
 
 ## 7. Store listing assets you must provide
 
@@ -186,16 +209,17 @@ Play Console → **Store presence → Main store listing** needs:
   `Offline-first task & note tracker sorted by what's due next. Optional sync.`
 - **Full description** (≤ 4000 chars) — reuse/trim the README intro + feature
   list.
-- **App icon**: 512×512 PNG, 32-bit, ≤ 1024 KB. The current launcher icon is
-  generated from `assets/icon/icon.png`; export a 512×512 version (or run a
-  quick resize) and upload.
-- **Feature graphic**: 1024×500 PNG/JPG, ≤ 1 MB (no transparency).
+- **App icon**: 512×512 PNG, 32-bit, ≤ 1024 KB. Use
+  `assets/icon/icon_play_512.png` (generated from the launcher master).
+- **Feature graphic**: 1024×500 PNG/JPG, ≤ 1 MB (no transparency). Use
+  `assets/store/feature_graphic_1024x500.png`.
 - **Screenshots**: at least 2 phone screenshots (16:9 or 9:16), up to 8. Take
-  from a device/emulator of the list, a task card close-up, the widget, sync
-  sheet, settings. Recommended also a 7-inch and 10-inch tablet set if you want
-  tablet merchandising.
+  them from a real device or emulator of this exact build: the task list, a task
+  card close-up, the widget, the Reminders & digest sheet, and sync settings.
+  Do not use mockups that show features the app does not have. Recommended also
+  a 7-inch and 10-inch tablet set if you want tablet merchandising.
 - **Video** (optional): YouTube URL.
-- Privacy policy URL: paste yours.
+- Privacy policy URL: paste your hosted policy URL (see section 5).
 
 ## 8. Upload and release
 
@@ -226,19 +250,22 @@ Play Console → **Store presence → Main store listing** needs:
 
 ## 10. Common Play rejection causes for this app (pre-empt them)
 
-- **SCHEDULE_EXACT_ALARM without justification** → fill the declaration form
-  (section 5).
-- **USE_FULL_SCREEN_INTENT without justification** → fill the declaration form.
-- **Drive scope verification** → appDataFolder is a restricted scope; ship
-  with test users first, submit verification before broad launch.
-- **Missing privacy policy / wrong URL** → ensure URL loads and matches the
-  data-safety answers.
+- **Exact-alarm declaration missing** → fill the declaration in section 5. The
+  app degrades gracefully if permission is denied, so never claim the permission
+  is required.
+- **Drive OAuth consent screen still in Testing** → production users cannot
+  sign in until it is published (section 6.3). `drive.appdata` is not a
+  sensitive scope, so full verification is not required.
+- **Missing privacy policy / wrong URL** → ensure URL loads without login and
+  matches the data-safety answers.
 - **Target SDK too low** → already 36, fine.
 - **Impersonating Google** → app name "Deadlines&Notes" is fine, but don't use
   Google logos in the listing.
 - **Crashes on launch on the Play-signed build** → almost always the Google
   Sign-In fingerprint mismatch (section 6) or a missing permission. Test the
   internal-testing build before promoting.
+- **Stale artifact** → always `flutter clean` before the release build
+  (section 2); an old AAB can silently ship old code.
 
 ---
 Generated/verified from the repo state on the working machine. Re-run section 2's

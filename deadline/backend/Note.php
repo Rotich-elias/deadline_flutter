@@ -17,12 +17,13 @@ class Note extends Model
 
     protected $fillable = [
         'id', 'user_id', 'title', 'body', 'tag',
-        'deleted', 'updated_at', 'created_at',
+        'deleted', 'updated_at', 'created_at', 'synced_at',
     ];
 
     protected $casts = [
         'updated_at' => 'datetime',
         'created_at' => 'datetime',
+        'synced_at' => 'datetime',
         'deleted' => 'boolean',
     ];
 

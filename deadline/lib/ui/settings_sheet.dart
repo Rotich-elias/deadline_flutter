@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/task_store.dart';
+import '../services/notifications.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 
@@ -239,7 +240,7 @@ class _DriveSection extends StatelessWidget {
   }
 }
 
-class _ServerSection extends StatelessWidget {
+class _ServerSection extends StatefulWidget {
   const _ServerSection(
       {required this.sync, required this.url, required this.token});
   final SyncService sync;
@@ -247,12 +248,40 @@ class _ServerSection extends StatelessWidget {
   final TextEditingController token;
 
   @override
+  State<_ServerSection> createState() => _ServerSectionState();
+}
+
+class _ServerSectionState extends State<_ServerSection> {
+  String? _error;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final error = await widget.sync.saveServerSettings(
+      url: widget.url.text,
+      tok: widget.token.text,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _saving = false;
+        _error = error;
+      });
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextField(
-          controller: url,
+          controller: widget.url,
           keyboardType: TextInputType.url,
           autocorrect: false,
           decoration: const InputDecoration(
@@ -262,17 +291,25 @@ class _ServerSection extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         TextField(
-          controller: token,
+          controller: widget.token,
           autocorrect: false,
           obscureText: true,
           decoration: const InputDecoration(labelText: 'Access token'),
         ),
+        if (_error != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            _error!,
+            style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 12.5),
+          ),
+        ],
         const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: sync.configured ? () => sync.syncNow() : null,
+                onPressed:
+                    widget.sync.configured ? () => widget.sync.syncNow() : null,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: BorderSide(color: Ink0.line),
@@ -285,17 +322,13 @@ class _ServerSection extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: FilledButton(
-                onPressed: () async {
-                  await sync.saveServerSettings(
-                      url: url.text, tok: token.text);
-                  if (context.mounted) Navigator.of(context).pop();
-                },
+                onPressed: _saving ? null : _save,
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Save'),
+                child: Text(_saving ? 'Saving…' : 'Save'),
               ),
             ),
           ],
@@ -436,6 +469,41 @@ class _DigestSheetState extends State<_DigestSheet> {
     minute: widget.store.digestMinute,
   );
 
+  bool _permissionsLoaded = false;
+  bool _notificationsOn = true;
+  bool _exactOn = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshPermissions();
+  }
+
+  Future<void> _refreshPermissions() async {
+    final notificationsOn =
+        await Notifications.instance.areNotificationsEnabled();
+    final exactOn =
+        await Notifications.instance.canScheduleExactNotifications();
+    if (!mounted) return;
+    setState(() {
+      _notificationsOn = notificationsOn;
+      _exactOn = exactOn;
+      _permissionsLoaded = true;
+    });
+  }
+
+  Future<void> _allowNotifications() async {
+    await Notifications.instance.requestNotificationPermission();
+    await _refreshPermissions();
+  }
+
+  Future<void> _allowExact() async {
+    await Notifications.instance.requestExactAlarmPermission();
+    await _refreshPermissions();
+    // Alarms that were scheduled inexactly can now be made exact.
+    await Notifications.instance.resyncAll(widget.store.tasks);
+  }
+
   Future<void> _pickTime() async {
     final t = await showTimePicker(context: context, initialTime: _time);
     if (t != null) setState(() => _time = t);
@@ -454,18 +522,54 @@ class _DigestSheetState extends State<_DigestSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Daily digest',
+          Text('Reminders & digest',
               style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w700,
-                  color: Ink0.text)),
+                  fontSize: 19, fontWeight: FontWeight.w700, color: Ink0.text)),
           const SizedBox(height: 6),
           Text(
             'One notification each morning with how many tasks are open '
             'and overdue — instead of a ping for every reminder.',
             style: TextStyle(fontSize: 13, color: Ink0.muted, height: 1.4),
           ),
-          const SizedBox(height: 18),
+          if (_permissionsLoaded) ...[
+            const SizedBox(height: 16),
+            _PermissionRow(
+              icon: Icons.notifications_none,
+              title: 'Notifications',
+              status: _notificationsOn ? 'Allowed' : 'Blocked',
+              actionLabel: _notificationsOn ? null : 'Allow',
+              onAction: _notificationsOn ? null : _allowNotifications,
+            ),
+            if (!_notificationsOn)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: Text(
+                  'If no prompt appears, enable notifications for '
+                  'Deadlines&Notes in Android Settings.',
+                  style: TextStyle(
+                      fontSize: 11.5, color: Ink0.muted, height: 1.35),
+                ),
+              ),
+            const SizedBox(height: 8),
+            _PermissionRow(
+              icon: Icons.alarm,
+              title: 'Exact reminder timing',
+              status: _exactOn ? 'Allowed' : 'Approximate',
+              actionLabel: _exactOn ? null : 'Allow',
+              onAction: _exactOn ? null : _allowExact,
+            ),
+            if (!_exactOn)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: Text(
+                  'Reminders still arrive, but Android may delay them by '
+                  'a few minutes.',
+                  style: TextStyle(
+                      fontSize: 11.5, color: Ink0.muted, height: 1.35),
+                ),
+              ),
+            Divider(height: 26, color: Ink0.line),
+          ],
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             value: _enabled,
@@ -479,8 +583,7 @@ class _DigestSheetState extends State<_DigestSheet> {
             onTap: _enabled ? _pickTime : null,
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               decoration: BoxDecoration(
                 color: Ink0.surfaceHi,
                 borderRadius: BorderRadius.circular(12),
@@ -488,8 +591,7 @@ class _DigestSheetState extends State<_DigestSheet> {
               child: Row(
                 children: [
                   Icon(Icons.access_time,
-                      size: 16,
-                      color: _enabled ? Ink0.muted : Ink0.line),
+                      size: 16, color: _enabled ? Ink0.muted : Ink0.line),
                   const SizedBox(width: 8),
                   Text(_time.format(context),
                       style: TextStyle(
@@ -513,13 +615,59 @@ class _DigestSheetState extends State<_DigestSheet> {
               },
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 15),
-                shape:
-                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               child: const Text('Save',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PermissionRow extends StatelessWidget {
+  const _PermissionRow({
+    required this.icon,
+    required this.title,
+    required this.status,
+    required this.actionLabel,
+    required this.onAction,
+  });
+  final IconData icon;
+  final String title;
+  final String status;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final allowed = actionLabel == null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Ink0.muted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 14, color: Ink0.text)),
+                Text(status,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: allowed ? Ink0.muted : const Color(0xFFFF6B6B))),
+              ],
+            ),
+          ),
+          if (!allowed)
+            TextButton(
+              onPressed: onAction,
+              child: Text(actionLabel!),
+            ),
         ],
       ),
     );

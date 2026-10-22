@@ -17,6 +17,10 @@ const _maxTombstoneAge = Duration(days: 30);
 /// backend has, so every sync downloads the full file, merges in local
 /// changes newest-wins, and re-uploads the merged set. One instance per
 /// entity type, each with its own file name and (de)serializers.
+///
+/// Two devices syncing at once would otherwise overwrite each other's work,
+/// so uploads carry the ETag of the file they were based on. Drive rejects a
+/// stale write with 412 and the whole read-merge-write cycle is retried.
 class DriveBackend<T> implements SyncBackend<T> {
   DriveBackend(
     this._account, {
@@ -41,15 +45,29 @@ class DriveBackend<T> implements SyncBackend<T> {
     required List<T> changes,
     DateTime? since,
   }) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await _syncOnce(changes);
+      } on _PreconditionFailed catch (e) {
+        lastError = e;
+      }
+    }
+    throw ApiException(
+      'Another device changed the Drive file repeatedly during sync. '
+      'Please try again. ($lastError)',
+    );
+  }
+
+  Future<SyncResponse<T>> _syncOnce(List<T> changes) async {
     final headers = await _account.authHeaders;
     final fileId = await _findOrCreateFile(headers);
-    final remote = await _download(headers, fileId);
+    final snapshot = await _download(headers, fileId);
 
-    final merged = {for (final t in remote) idOf(t): t};
+    final merged = {for (final t in snapshot.items) idOf(t): t};
     for (final c in changes) {
       final existing = merged[idOf(c)];
-      if (existing == null ||
-          updatedAtOf(c).isAfter(updatedAtOf(existing))) {
+      if (existing == null || updatedAtOf(c).isAfter(updatedAtOf(existing))) {
         merged[idOf(c)] = c;
       }
     }
@@ -60,7 +78,7 @@ class DriveBackend<T> implements SyncBackend<T> {
             now.difference(updatedAtOf(t)) > _maxTombstoneAge))
         .toList();
 
-    await _upload(headers, fileId, pruned);
+    await _upload(headers, fileId, pruned, snapshot.etag);
 
     return SyncResponse(serverTime: now, items: pruned);
   }
@@ -76,16 +94,15 @@ class DriveBackend<T> implements SyncBackend<T> {
         .timeout(const Duration(seconds: 20));
     _checkStatus(listRes);
 
-    final files = (jsonDecode(listRes.body) as Map<String, dynamic>)['files']
-        as List;
+    final files =
+        (jsonDecode(listRes.body) as Map<String, dynamic>)['files'] as List;
     if (files.isNotEmpty) {
       return (files.first as Map<String, dynamic>)['id'] as String;
     }
 
-    final createUri = Uri.https('www.googleapis.com', '/drive/v3/files');
     final createRes = await http
         .post(
-          createUri,
+          Uri.https('www.googleapis.com', '/drive/v3/files'),
           headers: {...headers, 'Content-Type': 'application/json'},
           body: jsonEncode({
             'name': fileName,
@@ -94,45 +111,69 @@ class DriveBackend<T> implements SyncBackend<T> {
         )
         .timeout(const Duration(seconds: 20));
     _checkStatus(createRes);
-    return (jsonDecode(createRes.body) as Map<String, dynamic>)['id']
-        as String;
+    return (jsonDecode(createRes.body) as Map<String, dynamic>)['id'] as String;
   }
 
-  Future<List<T>> _download(
+  /// Returns the file contents plus the ETag they were read at. A missing
+  /// file (deleted from Drive, or a race after listing) is treated as empty
+  /// so the upload recreates it instead of failing the sync.
+  Future<_DriveSnapshot<T>> _download(
       Map<String, String> headers, String fileId) async {
     final uri = Uri.https(
         'www.googleapis.com', '/drive/v3/files/$fileId', {'alt': 'media'});
-    final res =
-        await http.get(uri, headers: headers).timeout(const Duration(seconds: 20));
-    if (res.statusCode == 404) return [];
+    final res = await http
+        .get(uri, headers: headers)
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode == 404) return _DriveSnapshot<T>([], null);
     _checkStatus(res);
-    if (res.bodyBytes.isEmpty) return [];
+    if (res.bodyBytes.isEmpty) {
+      return _DriveSnapshot<T>([], res.headers['etag']);
+    }
 
     final list = jsonDecode(res.body) as List;
-    return list.map((e) => fromJson(e as Map<String, dynamic>)).toList();
+    return _DriveSnapshot<T>(
+      list.map((e) => fromJson(e as Map<String, dynamic>)).toList(),
+      res.headers['etag'],
+    );
   }
 
-  Future<void> _upload(
-      Map<String, String> headers, String fileId, List<T> items) async {
+  Future<void> _upload(Map<String, String> headers, String fileId,
+      List<T> items, String? etag) async {
     final uri = Uri.https('www.googleapis.com',
         '/upload/drive/v3/files/$fileId', {'uploadType': 'media'});
+    final reqHeaders = {...headers, 'Content-Type': 'application/json'};
+    if (etag != null && etag.isNotEmpty) reqHeaders['If-Match'] = etag;
+
     final res = await http
         .patch(
           uri,
-          headers: {...headers, 'Content-Type': 'application/json'},
+          headers: reqHeaders,
           body: jsonEncode(items.map(toJson).toList()),
         )
         .timeout(const Duration(seconds: 20));
+    if (res.statusCode == 412) throw const _PreconditionFailed();
+    if (res.statusCode == 404) throw const _PreconditionFailed();
     _checkStatus(res);
   }
 
   void _checkStatus(http.Response res) {
     if (res.statusCode == 401) {
-      throw ApiException(
-          'Google sign-in expired. Sign in again in Settings.');
+      throw ApiException('Google sign-in expired. Sign in again in Settings.');
     }
     if (res.statusCode >= 400) {
       throw ApiException('Drive returned ${res.statusCode}.');
     }
   }
+}
+
+class _DriveSnapshot<T> {
+  const _DriveSnapshot(this.items, this.etag);
+  final List<T> items;
+  final String? etag;
+}
+
+class _PreconditionFailed implements Exception {
+  const _PreconditionFailed();
+  @override
+  String toString() => 'Drive file changed during sync';
 }

@@ -24,34 +24,25 @@ without you touching anything.
 ## Running the app
 
 ```bash
-flutter create --org com.yourname --project-name deadline .
-# then drop lib/ and pubspec.yaml from this folder over the generated files
 flutter pub get
 flutter run
 ```
 
-Two Android build settings are required by `flutter_local_notifications`:
+The Android project is already configured (Java 17, core library desugaring,
+`minSdk 24`, notification receivers, widget provider and the upload signing
+config). Do not regenerate `android/` over it.
 
-In `android/app/build.gradle` (or `build.gradle.kts`), inside `android { }`:
+Builds:
 
-```gradle
-compileOptions {
-    coreLibraryDesugaringEnabled true
-    sourceCompatibility JavaVersion.VERSION_17
-    targetCompatibility JavaVersion.VERSION_17
-}
-defaultConfig {
-    minSdkVersion 23
-}
+```bash
+flutter test
+flutter analyze
+flutter clean && flutter build appbundle --release
 ```
 
-and in `dependencies { }`:
-
-```gradle
-coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
-```
-
-Then merge `android_manifest_snippet.xml` into your manifest.
+The release build deliberately fails if `android/key.properties` is missing or
+points at a missing keystore, instead of silently falling back to the debug key.
+See `PLAY_STORE_DEPLOYMENT.md`.
 
 Build the APK with `flutter build apk --release`; the file lands in
 `build/app/outputs/flutter-apk/`.
@@ -61,6 +52,14 @@ Build the APK with `flutter build apk --release`; the file lands in
 Each task schedules two local notifications — one day before and one hour
 before. They are rescheduled on every edit, cancelled when a task is completed
 or deleted, and restored after a reboot via the boot receiver.
+
+Android 13+ requires notification permission; the app asks after the first
+frame so the prompt can never delay launch. Android 14+ does not grant exact
+alarms by default, so reminders are scheduled inexactly (Android may delay them
+by a few minutes) until the user allows exact timing from **menu → Reminders &
+digest**. The app never opens the system alarms screen on its own. If Android
+rejects an exact alarm, scheduling automatically retries as an inexact alarm
+rather than failing.
 
 ## Sync (optional)
 
@@ -80,17 +79,21 @@ give it:
   -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass
   android -keypass android`)
 
-Also add your own account as a **test user** on the OAuth consent screen so
-sign-in works without going through Google's review. Nothing needs to be
-pasted into the app — Android matches the client by package name + fingerprint
-automatically. Then on the phone: menu → *Sync settings* → *Google Drive* →
-*Sign in with Google*.
+Also add your own account as a **test user** on the OAuth consent screen while
+developing. `drive.appdata` is a non-sensitive scope, so Google does not require
+the app to complete sensitive-scope verification, but the OAuth consent screen
+must be published before people outside your test-user list can sign in.
+Nothing needs to be pasted into the app — Android matches the client by package
+name + fingerprint automatically. Then on the phone: menu → *Sync settings* →
+*Google Drive* → *Sign in with Google*.
 
 Tasks and notes each get their own JSON file in the app's private Drive
 `appDataFolder` — invisible in the user's normal Drive UI, and only this app
 can read it. There's no server-side database, so every sync downloads the
 whole file, merges in local changes (newest `updated_at` wins), and re-uploads
-the merged set. Tombstones older than 30 days are dropped from the file so it
+the merged set. Uploads send the ETag the file was read at, so if another
+device writes in between, Drive rejects the stale upload and the app retries the
+whole merge. Tombstones older than 30 days are dropped from the file so it
 doesn't grow forever.
 
 ### Option B — your own Laravel server
@@ -99,6 +102,7 @@ Copy the files in `backend/` into a Laravel app with Sanctum installed:
 
 - `2026_07_23_000000_create_tasks_table.php` → `database/migrations/`
 - `2026_07_24_000000_create_notes_table.php` → `database/migrations/`
+- `2026_10_23_000000_add_synced_at_to_tasks_and_notes.php` → `database/migrations/`
 - `Task.php`, `Note.php` → `app/Models/`
 - `SyncController.php`, `NoteSyncController.php` → `app/Http/Controllers/`
 - merge `api_routes.php` into `routes/api.php`
@@ -110,11 +114,15 @@ php artisan tinker
 ```
 
 **Phone side** — menu → *Sync settings* → *Your server* → paste the server
-address and the token, then Save.
+address and the token, then Save. The address must use `https://`; the app
+rejects plain HTTP so the token is never sent in clear text. The token is stored
+in Android's Keystore-backed secure storage.
 
 One endpoint, `POST /api/tasks/sync`. The device sends every row flagged
 `dirty` plus the timestamp of its last successful sync; the server merges those
-in, then returns everything changed since that timestamp.
+in, then returns everything with a server-stamped `synced_at` at or after that
+timestamp. Pull filtering uses the server clock, not the device's
+`updated_at`, so a phone with a slow clock cannot miss changes forever.
 
 ### Conflict handling (both backends)
 
@@ -127,6 +135,13 @@ acknowledges them.
 Sync fires on launch, on resume, three seconds after any edit, when the network
 comes back, and on pull-to-refresh. A small cloud icon on each card marks rows
 that have not made it up yet.
+
+## Privacy
+
+There are no ads, analytics or crash-reporting SDKs. See `PRIVACY_POLICY.md`
+(also available in the app under **menu → Privacy policy**) for the full
+policy. Android Auto Backup is disabled, so the local database is not copied
+into Google's cloud backup.
 
 ## Layout
 
@@ -143,6 +158,8 @@ lib/
   services/home_widget_service.dart  pushes the next deadline to the home screen widget
   utils/urgency.dart             the colour and countdown rules
   ui/                            list, card, forms
+  ui/privacy_page.dart           in-app copy of PRIVACY_POLICY.md
+test/                            unit tests for recurrence, reminders and sync URLs
 ```
 
 The urgency rules live in one file on purpose. Change the thresholds or the

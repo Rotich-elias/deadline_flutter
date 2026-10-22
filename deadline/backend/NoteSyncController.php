@@ -30,7 +30,7 @@ class NoteSyncController extends Controller
         $userId = $request->user()->id;
         $serverTime = Carbon::now('UTC');
 
-        DB::transaction(function () use ($data, $userId) {
+        DB::transaction(function () use ($data, $userId, $serverTime) {
             foreach ($data['changes'] ?? [] as $change) {
                 $incomingAt = Carbon::parse($change['updated_at'])->utc();
 
@@ -53,6 +53,7 @@ class NoteSyncController extends Controller
                         'deleted' => $change['deleted'],
                         'updated_at' => $incomingAt,
                         'created_at' => $existing?->created_at ?? Carbon::now('UTC'),
+                        'synced_at' => $serverTime,
                     ]
                 );
             }
@@ -61,7 +62,9 @@ class NoteSyncController extends Controller
         $query = Note::where('user_id', $userId);
 
         if (! empty($data['since'])) {
-            $query->where('updated_at', '>', Carbon::parse($data['since'])->utc());
+            // Server clock, never the device's updated_at. Inclusive so a row
+            // that shares the cursor instant is resent rather than lost.
+            $query->where('synced_at', '>=', Carbon::parse($data['since'])->utc());
         } else {
             // First sync on a new device: skip tombstones it never knew about.
             $query->where('deleted', false);

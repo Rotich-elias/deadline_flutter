@@ -9,7 +9,8 @@ plugins {
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
+val hasSigningConfig = keystorePropertiesFile.exists()
+if (hasSigningConfig) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
 
@@ -29,7 +30,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.deadline.app.deadline"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -41,22 +41,42 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
+            if (hasSigningConfig) {
+                val storePath = keystoreProperties["storeFile"] as String?
+                val storePasswordValue = keystoreProperties["storePassword"] as String?
+                val keyAliasValue = keystoreProperties["keyAlias"] as String?
+                val keyPasswordValue = keystoreProperties["keyPassword"] as String?
+                val store = storePath?.let { rootProject.file(it) }
+
+                if (store == null || !store.exists() ||
+                    storePasswordValue.isNullOrBlank() ||
+                    keyAliasValue.isNullOrBlank() ||
+                    keyPasswordValue.isNullOrBlank()
+                ) {
+                    throw GradleException(
+                        "Release signing is not configured. Create android/key.properties " +
+                            "with storeFile, storePassword, keyAlias and keyPassword, " +
+                            "and make sure the keystore exists.",
+                    )
+                }
+
+                storeFile = store
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            if (!hasSigningConfig) {
+                throw GradleException(
+                    "Missing android/key.properties: refusing to build a release " +
+                        "signed with the debug key. See PLAY_STORE_DEPLOYMENT.md.",
+                )
             }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

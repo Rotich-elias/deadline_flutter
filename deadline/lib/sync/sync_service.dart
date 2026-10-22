@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +23,7 @@ enum SyncMethod { off, server, drive }
 
 const _tasksDriveFile = 'deadline_sync.json';
 const _notesDriveFile = 'deadline_notes.json';
+const _tokenKey = 'sync.token';
 
 /// Push local changes, pull remote ones, merge by newest-wins — for both
 /// tasks and notes, over whichever backend is configured.
@@ -48,6 +50,7 @@ class SyncService extends ChangeNotifier {
   Timer? _debounce;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: driveScopes);
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   SyncMethod method = SyncMethod.off;
   String baseUrl = '';
@@ -60,7 +63,8 @@ class SyncService extends ChangeNotifier {
 
   bool get configured => switch (method) {
         SyncMethod.off => false,
-        SyncMethod.server => baseUrl.isNotEmpty && token.isNotEmpty,
+        SyncMethod.server =>
+          validateServerUrl(baseUrl) == null && token.isNotEmpty,
         SyncMethod.drive => driveAccount != null,
       };
 
@@ -112,10 +116,29 @@ class SyncService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     method = SyncMethod.values[prefs.getInt('sync.method') ?? 0];
     baseUrl = prefs.getString('sync.baseUrl') ?? '';
-    token = prefs.getString('sync.token') ?? '';
+
+    // The token belongs in the platform keystore, not in SharedPreferences
+    // (which Auto Backup / adb could read). Migrate one-time from the old key.
+    final legacyToken = prefs.getString(_tokenKey) ?? '';
+    try {
+      var stored = await _secureStorage.read(key: _tokenKey) ?? '';
+      if (stored.isEmpty && legacyToken.isNotEmpty) {
+        await _secureStorage.write(key: _tokenKey, value: legacyToken);
+        stored = legacyToken;
+      }
+      if (legacyToken.isNotEmpty) await prefs.remove(_tokenKey);
+      token = stored;
+    } catch (e) {
+      // A device without a working keystore can still use sync; the token
+      // simply is not persisted between launches.
+      debugPrint('Secure storage unavailable: $e');
+      token = legacyToken;
+    }
+
     final ms = prefs.getInt('sync.lastSyncedAt');
-    lastSyncedAt =
-        ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+    lastSyncedAt = ms == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
 
     if (method == SyncMethod.drive) {
       driveAccount = await _googleSignIn.signInSilently();
@@ -126,18 +149,46 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveServerSettings(
+  /// Returns an error message for an unusable server URL, or null when valid.
+  static String? validateServerUrl(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || uri.host.isEmpty) {
+      return 'Enter a full address, e.g. https://tasks.example.com';
+    }
+    if (uri.scheme != 'https') {
+      return 'Use https:// so your token is sent encrypted.';
+    }
+    if (uri.hasQuery || uri.hasFragment) {
+      return 'Enter just the server address, without a query or fragment.';
+    }
+    return null;
+  }
+
+  /// Saves server settings. Returns an error message, or null on success.
+  Future<String?> saveServerSettings(
       {required String url, required String tok}) async {
-    baseUrl = url.trim();
-    token = tok.trim();
+    final error = validateServerUrl(url);
+    if (error != null) return error;
+
+    final trimmedToken = tok.trim();
+    if (trimmedToken.isEmpty) return 'Enter the access token from your server.';
+
+    baseUrl = url.trim().replaceFirst(RegExp(r'/+$'), '');
+    token = trimmedToken;
     method = SyncMethod.server;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('sync.baseUrl', baseUrl);
-    await prefs.setString('sync.token', token);
     await prefs.setInt('sync.method', method.index);
+    await prefs.remove(_tokenKey);
+    try {
+      await _secureStorage.write(key: _tokenKey, value: token);
+    } catch (e) {
+      debugPrint('Could not store token securely: $e');
+    }
     state = configured ? SyncState.idle : SyncState.off;
     notifyListeners();
-    if (configured) await syncNow();
+    if (configured) unawaited(syncNow());
+    return null;
   }
 
   Future<void> signInWithGoogle() async {

@@ -5,6 +5,7 @@ import '../models/task.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import '../utils/urgency.dart';
+import 'privacy_page.dart';
 import 'settings_sheet.dart';
 import 'sync_button.dart';
 import 'tag_filter_row.dart';
@@ -193,6 +194,10 @@ class _Header extends StatelessWidget {
                 showDigestSettings(context, store);
               } else if (v == 'appearance') {
                 showAppearanceSettings(context, appTheme);
+              } else if (v == 'privacy') {
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const PrivacyPolicyPage(),
+                ));
               }
             },
             itemBuilder: (_) => [
@@ -201,10 +206,13 @@ class _Header extends StatelessWidget {
                 child: Text(
                     store.showCompleted ? 'Hide completed' : 'Show completed'),
               ),
-              const PopupMenuItem(value: 'digest', child: Text('Daily digest')),
+              const PopupMenuItem(
+                  value: 'digest', child: Text('Reminders & digest')),
               const PopupMenuItem(value: 'sync', child: Text('Sync settings')),
               const PopupMenuItem(
                   value: 'appearance', child: Text('Appearance')),
+              const PopupMenuItem(
+                  value: 'privacy', child: Text('Privacy policy')),
             ],
           ),
         ],
