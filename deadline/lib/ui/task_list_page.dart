@@ -29,8 +29,8 @@ class TaskListPage extends StatelessWidget {
   }
 
   Future<void> _edit(BuildContext context, Task task) async {
-    final t = await showTaskForm(context,
-        existing: task, existingTags: store.tags);
+    final t =
+        await showTaskForm(context, existing: task, existingTags: store.tags);
     if (t != null) await store.save(t);
   }
 
@@ -165,8 +165,7 @@ class _Header extends StatelessWidget {
                 Row(
                   children: [
                     Text('$open open',
-                        style:
-                            TextStyle(fontSize: 13, color: Ink0.muted)),
+                        style: TextStyle(fontSize: 13, color: Ink0.muted)),
                     if (overdue > 0) ...[
                       Text(' · ',
                           style: TextStyle(fontSize: 13, color: Ink0.muted)),
@@ -199,12 +198,10 @@ class _Header extends StatelessWidget {
             itemBuilder: (_) => [
               PopupMenuItem(
                 value: 'completed',
-                child: Text(store.showCompleted
-                    ? 'Hide completed'
-                    : 'Show completed'),
+                child: Text(
+                    store.showCompleted ? 'Hide completed' : 'Show completed'),
               ),
-              const PopupMenuItem(
-                  value: 'digest', child: Text('Daily digest')),
+              const PopupMenuItem(value: 'digest', child: Text('Daily digest')),
               const PopupMenuItem(value: 'sync', child: Text('Sync settings')),
               const PopupMenuItem(
                   value: 'appearance', child: Text('Appearance')),
@@ -245,8 +242,7 @@ class _GroupHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text('$count',
-              style: TextStyle(fontSize: 11.5, color: Ink0.line)),
+          Text('$count', style: TextStyle(fontSize: 11.5, color: Ink0.line)),
           const SizedBox(width: 10),
           Expanded(child: Divider(height: 1, color: Ink0.line)),
         ],
@@ -267,14 +263,12 @@ class _Empty extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.event_available,
-                size: 44, color: Urgency.week.color.withOpacity(0.6)),
+                size: 44, color: Urgency.week.color.withValues(alpha: 0.6)),
             const SizedBox(height: 14),
             Text(
               'Nothing due',
               style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  color: Ink0.text),
+                  fontSize: 17, fontWeight: FontWeight.w600, color: Ink0.text),
             ),
             const SizedBox(height: 6),
             Text(

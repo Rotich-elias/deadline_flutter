@@ -1,5 +1,3 @@
-import 'dart:ui' show FontFeature;
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -32,7 +30,7 @@ class TaskCard extends StatelessWidget {
         color: Ink0.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: u == Urgency.overdue ? c.withOpacity(0.45) : Ink0.line,
+          color: u == Urgency.overdue ? c.withValues(alpha: 0.45) : Ink0.line,
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -75,7 +73,8 @@ class TaskCard extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            if (!dim) _CountdownChip(text: countdownOf(task), color: c),
+                            if (!dim)
+                              _CountdownChip(text: countdownOf(task), color: c),
                           ],
                         ),
                         if ((task.notes ?? '').trim().isNotEmpty) ...[
@@ -93,7 +92,9 @@ class TaskCard extends StatelessWidget {
                           children: [
                             Icon(Icons.schedule,
                                 size: 14,
-                                color: dim ? Ink0.muted : c.withOpacity(0.9)),
+                                color: dim
+                                    ? Ink0.muted
+                                    : c.withValues(alpha: 0.9)),
                             const SizedBox(width: 5),
                             Text(
                               _whenLabel(task.dueLocal),
@@ -106,7 +107,9 @@ class TaskCard extends StatelessWidget {
                               const SizedBox(width: 8),
                               Icon(Icons.repeat,
                                   size: 13,
-                                  color: dim ? Ink0.muted : c.withOpacity(0.9)),
+                                  color: dim
+                                      ? Ink0.muted
+                                      : c.withValues(alpha: 0.9)),
                             ],
                             if (task.dirty) ...[
                               const SizedBox(width: 8),
@@ -200,7 +203,7 @@ class _CountdownChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.14),
+        color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(7),
       ),
       child: Text(
