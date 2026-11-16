@@ -10,33 +10,123 @@ import 'services/notifications.dart';
 import 'sync/sync_service.dart';
 import 'theme.dart';
 import 'ui/home_shell.dart';
+import 'ui/loading_page.dart';
+
+/// Minimum time the branded loading page stays up, so a fast start does not
+/// flash it for a couple of frames.
+const _minSplash = Duration(milliseconds: 900);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  final db = LocalDb();
-  await db.open();
-  await Notifications.instance.init();
+  // Paint the loading page first, then open the database and load data behind
+  // it. This replaces the blank window that used to sit between the native
+  // splash and the first real frame.
+  runApp(const DeadlineBootstrap());
+}
 
-  final store = TaskStore(db);
-  final notesStore = NotesStore(db);
-  final sync = SyncService(db, store, notesStore);
-  final appTheme = AppTheme();
-  Notifications.instance.onExternalChange = () => unawaited(store.load());
+/// Everything the running app needs, once the async startup work is done.
+class _AppDeps {
+  const _AppDeps({
+    required this.store,
+    required this.notesStore,
+    required this.sync,
+    required this.appTheme,
+  });
 
-  await store.loadDigestSettings();
-  await store.load();
-  await notesStore.load();
-  await sync.loadSettings();
-  await appTheme.load();
+  final TaskStore store;
+  final NotesStore notesStore;
+  final SyncService sync;
+  final AppTheme appTheme;
+}
 
-  runApp(DeadlineApp(
-    store: store,
-    notesStore: notesStore,
-    sync: sync,
-    appTheme: appTheme,
-  ));
+class DeadlineBootstrap extends StatefulWidget {
+  const DeadlineBootstrap({super.key});
+
+  @override
+  State<DeadlineBootstrap> createState() => _DeadlineBootstrapState();
+}
+
+class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
+  _AppDeps? _deps;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_boot());
+  }
+
+  Future<void> _boot() async {
+    final started = DateTime.now();
+    if (_error != null) setState(() => _error = null);
+
+    try {
+      final db = LocalDb();
+      await db.open();
+      await Notifications.instance.init();
+
+      final store = TaskStore(db);
+      final notesStore = NotesStore(db);
+      final sync = SyncService(db, store, notesStore);
+      final appTheme = AppTheme();
+      Notifications.instance.onExternalChange = () => unawaited(store.load());
+
+      await store.loadDigestSettings();
+      await store.load();
+      await notesStore.load();
+      await sync.loadSettings();
+      await appTheme.load();
+
+      final elapsed = DateTime.now().difference(started);
+      if (elapsed < _minSplash) {
+        await Future<void>.delayed(_minSplash - elapsed);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _deps = _AppDeps(
+          store: store,
+          notesStore: notesStore,
+          sync: sync,
+          appTheme: appTheme,
+        );
+      });
+    } catch (error, stack) {
+      debugPrint('Startup failed: $error\n$stack');
+      if (!mounted) return;
+      setState(() => _error = error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final deps = _deps;
+
+    if (_error != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(Brightness.dark),
+        home: BootErrorView(detail: '$_error', onRetry: _boot),
+      );
+    }
+
+    if (deps == null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(Brightness.dark),
+        home: const LoadingPage(),
+      );
+    }
+
+    return DeadlineApp(
+      store: deps.store,
+      notesStore: deps.notesStore,
+      sync: deps.sync,
+      appTheme: deps.appTheme,
+    );
+  }
 }
 
 class DeadlineApp extends StatefulWidget {

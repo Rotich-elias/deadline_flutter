@@ -5,6 +5,7 @@ import '../data/task_store.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import 'notes_list_page.dart';
+import 'powered_by_footer.dart';
 import 'task_list_page.dart';
 
 /// Bottom-nav switch between the two top-level sections: deadlines (the
@@ -45,22 +46,36 @@ class _HomeShellState extends State<HomeShell> {
           NotesListPage(store: widget.notesStore, sync: widget.sync),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        backgroundColor: Ink0.surface,
-        indicatorColor: Ink0.line,
-        height: 60,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.event_note_outlined),
-            selectedIcon: Icon(Icons.event_note),
-            label: 'Deadlines',
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        // Stretch so the credit strip spans the full width and blends into the
+        // navigation bar below it instead of hugging the text.
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ColoredBox(
+            color: Ink0.surface,
+            child: const PoweredByFooter(
+              padding: EdgeInsets.only(top: 6, bottom: 0),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.sticky_note_2_outlined),
-            selectedIcon: Icon(Icons.sticky_note_2),
-            label: 'Notes',
+          NavigationBar(
+            selectedIndex: _index,
+            onDestinationSelected: (i) => setState(() => _index = i),
+            backgroundColor: Ink0.surface,
+            indicatorColor: Ink0.line,
+            height: 60,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.event_note_outlined),
+                selectedIcon: Icon(Icons.event_note),
+                label: 'Deadlines',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.sticky_note_2_outlined),
+                selectedIcon: Icon(Icons.sticky_note_2),
+                label: 'Notes',
+              ),
+            ],
           ),
         ],
       ),

@@ -55,6 +55,7 @@ class Task {
     this.deleted = false,
     this.dirty = true,
     this.repeat = Repeat.none,
+    this.archivedAt,
     List<int>? reminderMinutes,
     DateTime? updatedAt,
   })  : reminderMinutes = reminderMinutes ?? defaultReminderMinutes,
@@ -93,7 +94,21 @@ class Task {
 
   /// Tombstone. Deletes have to travel to the server, so rows are flagged
   /// rather than removed, then purged once the server confirms them.
+  ///
+  /// While the row is still in the user's archive this stays `true` and
+  /// [archivedAt] is set. Clearing [archivedAt] turns it into a tombstone,
+  /// which is what makes a permanent delete travel to other devices.
   bool deleted;
+
+  /// When the user deleted this task, if it is being kept in the archive.
+  ///
+  /// Device-local like [reminderMinutes]: it is never sent to the server, so
+  /// each device keeps its own archive. A remote delete lands here with the
+  /// remote `updatedAt` as its archive time.
+  DateTime? archivedAt;
+
+  /// True when this task sits in the archive rather than waiting to be purged.
+  bool get archived => deleted && archivedAt != null;
 
   /// True when this copy has local changes the server has not seen.
   bool dirty;

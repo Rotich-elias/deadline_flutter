@@ -53,7 +53,10 @@ flutter_launcher_icons:
 
 flutter_native_splash:
   color: "#0E131B"
-  image: assets/icon/icon.png
+  # Composed artwork that mirrors lib/ui/loading_page.dart, so the branded
+  # screen is up from the very first frame (regenerate with
+  # `python3 tool/generate_splash.py`).
+  image: assets/splash/splash_brand.png
   android_12:
     color: "#0E131B"
     image: assets/icon/icon.png
