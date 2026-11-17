@@ -30,9 +30,9 @@ Suggested build order
       B/I/U/highlight markup plus a "- " line showed the tag-free preview
       "Bold italic under mark / • step one", the reader rendered the spans,
       search found "italic under" but not the literal "<b>". Test note
-      archived and purged. Final rebuild with the archive-preview fix
-      (SHA-256 1cc31b94…) is built but not installed — the phone went offline
-      before install; the earlier installed 1.0.9+10 build was verified.
+      archived and purged. The archive-preview rebuild (SHA-256 1cc31b94…)
+      was superseded by 1.0.15+16, installed and device-verified on 18 Nov
+      2026; the earlier installed 1.0.9+10 build was verified too.
 • [~] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
       Built 17 Nov 2026 (1.0.10+11): the note editor's "Attach file" button
       picks existing images, PDFs, audio and documents (multi-select, 50 MB
@@ -45,8 +45,9 @@ Suggested build order
       validation added. A sync pull keeps local file paths and never lets an
       older payload with no attachments drop them. 15 regression tests added in
       test/attachment_test.dart; flutter analyze clean and full suite passing.
-      Release APK built (SHA-256 4c9cc62d…) but not installed: `adb devices`
-      was empty when the build finished. Device verification is still pending.
+      Its APK (SHA-256 4c9cc62d…) was superseded by 1.0.15+16, which was
+      installed and device-verified on 18 Nov 2026. Per-release install was
+      skipped while the phone was offline.
       Capturing new photos/voice memos inside the app is not in this first
       version.
 • [ ] Web Clipping: Save articles or web pages straight from a browser into your notebook.
@@ -59,8 +60,8 @@ Suggested build order
       markup so template lines render as bullets. No schema, sync or backend
       change, and no new dependencies. 6 regression tests added in
       test/template_test.dart; flutter analyze clean and full suite passing
-      (132 tests). Release APK built (SHA-256 f95c6e4b…) but not installed:
-      `adb devices` is still empty. Device verification pending.
+      (132 tests). Its APK (SHA-256 f95c6e4b…) was superseded by 1.0.15+16,
+      installed and device-verified on 18 Nov 2026.
 
 2. To-Do List & Task Management
 
@@ -103,8 +104,9 @@ Suggested build order
       new dependencies, backend or sync/schema changes. External two-way
       calendar sync is still not implemented. 6 regression tests added in
       test/calendar_test.dart; flutter analyze clean and all 138 tests pass.
-      Release APK built (SHA-256 87e63fae…) but not installed: `adb devices`
-      was empty when the build finished. Device verification pending.
+      Its APK (SHA-256 87e63fae…) was superseded by 1.0.15+16, installed and
+      device-verified on 18 Nov 2026 (month grid and selected-day agenda
+      checked on the phone).
 • [x] Reminders & Push Notifications: Receive time-based or location-based alerts so you never miss a cutoff.
       Time-based heads-up reminders with the phone's notification tone, custom
       presets, reboot restore and a daily digest. Location-based alerts are not
@@ -117,9 +119,9 @@ Suggested build order
       title opens the normal task editor. "Add for today" pre-fills 9 am on the
       current day. Reads the existing task store, so no schema, sync or backend
       change. 6 regression tests added in test/my_day_test.dart; flutter analyze
-      clean and all 144 tests pass. Release APK built (SHA-256 7d266cc6…) but
-      not installed: `adb devices` was empty when the build finished. Device
-      verification pending.
+      clean and all 144 tests pass. Its APK (SHA-256 7d266cc6…) was superseded
+      by 1.0.15+16, installed and device-verified on 18 Nov 2026 (four tabs,
+      My Day grouping checked).
 
 4. Organization & Search
 
@@ -172,9 +174,10 @@ Suggested build order
       deadline, stored as JSON on the task row and synced with it. The task form
       lets you add/remove comments with an author label; the card shows a
       comment-count pill. Recurring next occurrences carry the assignee but
-      start a fresh thread. No activity/audit log yet. Release APK built
-      (SHA-256 9eab343b…) but not installed: `adb devices` was empty when the
-      build finished. Device verification pending.
+      start a fresh thread. No activity/audit log yet. Its APK (SHA-256
+      9eab343b…) was superseded by 1.0.15+16, installed and device-verified on
+      18 Nov 2026. Controls correctly absent because no server sync is
+      configured on the device.
 
 6. Security & AI Enhancements
 
@@ -199,10 +202,13 @@ Suggested build order
       pre-fills the editable title, due date, tag, notes and steps. No network,
       API key, dependency or schema/sync/backend change; nothing is saved until
       the user taps Save. 8 regression tests added in test/smart_extract_test.dart;
-      flutter analyze clean and all 161 tests pass. Release APK built
-      (SHA-256 a623ef9e…) but not installed: `adb devices` was empty when the
-      build finished; device verification pending. Meeting transcription and
-      schedule suggestions are still not implemented.
+      flutter analyze clean and all 161 tests pass. Installed 18 Nov 2026 as
+      1.0.15+16 (SHA-256 a623ef9e…) and device-verified: the paste box filled
+      a test draft ("ZZSmartTest tomorrow 5pm" → title + Thu 19 Nov, 5:00 PM),
+      then the draft was discarded without saving. Data baseline preserved:
+      2 open deadlines, 7 saved notes, archive 63 deadlines / 5 notes; locked
+      note still locked, app lock still ON (PIN 2580 + fingerprint). Meeting
+      transcription and schedule suggestions are still not implemented.
 
 Already shipped beyond this list
 • Archive with undo and permanent delete
