@@ -45,6 +45,44 @@ class ChecklistItem {
   String toString() => '$title${done ? ' ✓' : ''}';
 }
 
+/// A place-based reminder. Stored as JSON inside the task row, so it travels
+/// with the task like checklist items and comments. The native Android layer
+/// turns it into a geofence when the app runs.
+class LocationAlert {
+  const LocationAlert({
+    required this.label,
+    required this.latitude,
+    required this.longitude,
+    this.radiusMeters = 200,
+  });
+
+  final String label;
+  final double latitude;
+  final double longitude;
+  final double radiusMeters;
+
+  Map<String, dynamic> toJson() => {
+        'label': label,
+        'latitude': latitude,
+        'longitude': longitude,
+        'radius_meters': radiusMeters,
+      };
+
+  factory LocationAlert.fromJson(Object? raw) {
+    if (raw is! Map) return const LocationAlert(label: '', latitude: 0, longitude: 0);
+    final map = Map<String, dynamic>.from(raw);
+    return LocationAlert(
+      label: (map['label'] ?? '').toString(),
+      latitude: (map['latitude'] as num?)?.toDouble() ?? 0,
+      longitude: (map['longitude'] as num?)?.toDouble() ?? 0,
+      radiusMeters: (map['radius_meters'] as num?)?.toDouble() ?? 200,
+    );
+  }
+
+  @override
+  String toString() => label;
+}
+
 /// How a task recreates itself after it's marked done.
 enum Repeat { none, daily, weekly, monthly }
 
@@ -117,6 +155,10 @@ class Task {
     this.checklist = const [],
     this.assignedTo,
     this.comments = const [],
+    this.startAt,
+    this.labels = const [],
+    this.category,
+    this.locationAlert,
     List<int>? reminderMinutes,
     DateTime? updatedAt,
   })  : reminderMinutes = reminderMinutes ?? defaultReminderMinutes,
@@ -134,6 +176,10 @@ class Task {
     List<ChecklistItem>? checklist,
     String? assignedTo,
     List<TaskComment>? comments,
+    DateTime? startAt,
+    List<String>? labels,
+    String? category,
+    LocationAlert? locationAlert,
   }) {
     return Task(
       id: _uuid.v4(),
@@ -148,6 +194,10 @@ class Task {
       checklist: checklist ?? const [],
       assignedTo: assignedTo,
       comments: comments ?? const [],
+      startAt: startAt,
+      labels: labels ?? const [],
+      category: category,
+      locationAlert: locationAlert,
     );
   }
 
@@ -202,6 +252,22 @@ class Task {
   /// Discussion on this task. New occurrences start empty, like checklists.
   List<TaskComment> comments;
 
+  /// Optional scheduled start. A task can be worked on from [startAt] but is
+  /// only late after [dueAt]; null means "no scheduled window".
+  DateTime? startAt;
+
+  /// Multiple free-form labels, in addition to the single legacy [tag].
+  List<String> labels;
+
+  /// The project/category this task belongs to.
+  String? category;
+
+  /// Optional place-based reminder, mirrored into Android geofences.
+  LocationAlert? locationAlert;
+
+  DateTime get startLocal => (startAt ?? dueAt).toLocal();
+  bool get hasStartWindow => startAt != null;
+
   int get checklistDone => checklist.where((i) => i.done).length;
   bool get hasChecklist => checklist.isNotEmpty;
   bool get hasComments => comments.isNotEmpty;
@@ -224,6 +290,10 @@ class Task {
       pinned: pinned,
       priority: priority,
       assignedTo: assignedTo,
+      startAt: startAt == null ? null : repeat.next(startAt!),
+      labels: labels,
+      category: category,
+      locationAlert: locationAlert,
       // A fresh occurrence starts with every box unchecked and no discussion.
       checklist: [for (final item in checklist) item.copyWith(done: false)],
       comments: const [],
@@ -249,6 +319,13 @@ class Task {
     bool clearAssignedTo = false,
     String? assignedTo,
     List<TaskComment>? comments,
+    DateTime? startAt,
+    bool clearStartAt = false,
+    List<String>? labels,
+    String? category,
+    bool clearCategory = false,
+    LocationAlert? locationAlert,
+    bool clearLocationAlert = false,
     DateTime? updatedAt,
   }) {
     return Task(
@@ -268,6 +345,11 @@ class Task {
       checklist: checklist ?? this.checklist,
       assignedTo: clearAssignedTo ? null : (assignedTo ?? this.assignedTo),
       comments: comments ?? this.comments,
+      startAt: clearStartAt ? null : (startAt ?? this.startAt),
+      labels: labels ?? this.labels,
+      category: clearCategory ? null : (category ?? this.category),
+      locationAlert:
+          clearLocationAlert ? null : (locationAlert ?? this.locationAlert),
       updatedAt: updatedAt ?? DateTime.now().toUtc(),
     );
   }
@@ -304,6 +386,55 @@ class Task {
   }
 
   static bool _asBool(Object? raw) => raw == true || raw == 1;
+
+  /// Labels are stored as a JSON array locally and travel as a structured
+  /// list in sync payloads. Legacy rows without the column simply get [].
+  static List<String> _parseLabels(Object? raw) {
+    Iterable<dynamic> values;
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        values = jsonDecode(raw) as Iterable<dynamic>;
+      } catch (_) {
+        return const [];
+      }
+    } else if (raw is Iterable) {
+      values = raw;
+    } else {
+      return const [];
+    }
+    final result = <String>{};
+    for (final value in values) {
+      final label = value.toString().trim();
+      if (label.isNotEmpty) result.add(label);
+    }
+    return List.unmodifiable(result.toList()..sort());
+  }
+
+  static DateTime? _parseDate(Object? raw) {
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true);
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        return DateTime.parse(raw).toUtc();
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  static LocationAlert? _parseLocationAlert(Object? raw) {
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map || decoded.isEmpty) return null;
+        return LocationAlert.fromJson(decoded);
+      } catch (_) {
+        return null;
+      }
+    }
+    if (raw is Map && raw.isNotEmpty) return LocationAlert.fromJson(raw);
+    return null;
+  }
 
   static DateTime? _parseArchivedAt(Object? raw) =>
       raw is int ? DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true) : null;
@@ -386,6 +517,11 @@ class Task {
         'checklist': jsonEncode(checklist.map((i) => i.toJson()).toList()),
         'assigned_to': assignedTo,
         'comments': jsonEncode(comments.map((c) => c.toJson()).toList()),
+        'start_at': startAt?.millisecondsSinceEpoch,
+        'labels': jsonEncode(labels),
+        'category': category,
+        'location_alert':
+            locationAlert == null ? null : jsonEncode(locationAlert.toJson()),
       };
 
   factory Task.fromRow(Map<String, Object?> r) => Task(
@@ -408,6 +544,10 @@ class Task {
         checklist: _parseChecklist(r['checklist']),
         assignedTo: r['assigned_to'] as String?,
         comments: _parseComments(r['comments']),
+        startAt: _parseDate(r['start_at']),
+        labels: _parseLabels(r['labels']),
+        category: r['category'] as String?,
+        locationAlert: _parseLocationAlert(r['location_alert']),
       );
 
   /// [archivedAt] is intentionally absent: the archive is device-local, so a
@@ -428,6 +568,10 @@ class Task {
         'checklist': [for (final item in checklist) item.toJson()],
         'assigned_to': assignedTo,
         'comments': [for (final c in comments) c.toJson()],
+        'start_at': startAt?.toIso8601String(),
+        'labels': labels,
+        'category': category,
+        'location_alert': locationAlert?.toJson(),
       };
 
   factory Task.fromJson(Map<String, dynamic> j) {
@@ -450,6 +594,10 @@ class Task {
       checklist: _parseChecklist(j['checklist']),
       assignedTo: j['assigned_to'] as String?,
       comments: _parseComments(j['comments']),
+      startAt: _parseDate(j['start_at']),
+      labels: _parseLabels(j['labels']),
+      category: j['category'] as String?,
+      locationAlert: _parseLocationAlert(j['location_alert']),
       dirty: false,
     );
   }
