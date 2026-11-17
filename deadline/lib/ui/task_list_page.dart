@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../data/notes_store.dart';
 import '../data/task_store.dart';
 import '../models/task.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import '../utils/urgency.dart';
+import 'archive_page.dart';
 import 'privacy_page.dart';
 import 'settings_sheet.dart';
 import 'sync_button.dart';
@@ -16,13 +18,21 @@ class TaskListPage extends StatelessWidget {
   const TaskListPage({
     super.key,
     required this.store,
+    required this.notesStore,
     required this.sync,
     required this.appTheme,
   });
 
   final TaskStore store;
+  final NotesStore notesStore;
   final SyncService sync;
   final AppTheme appTheme;
+
+  void _openArchive(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ArchivePage(taskStore: store, notesStore: notesStore),
+    ));
+  }
 
   Future<void> _create(BuildContext context) async {
     final t = await showTaskForm(context, existingTags: store.tags);
@@ -41,7 +51,7 @@ class TaskListPage extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-        content: Text('Removed "${task.title}"'),
+        content: Text('Moved "${task.title}" to archive'),
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => store.restore(task),
@@ -59,7 +69,12 @@ class TaskListPage extends StatelessWidget {
             final tasks = store.visible;
             return Column(
               children: [
-                _Header(store: store, sync: sync, appTheme: appTheme),
+                _Header(
+                  store: store,
+                  sync: sync,
+                  appTheme: appTheme,
+                  onOpenArchive: () => _openArchive(context),
+                ),
                 if (store.tags.isNotEmpty)
                   TagFilterRow(
                     tags: store.tags,
@@ -114,7 +129,7 @@ class TaskListPage extends StatelessWidget {
             color: const Color(0xFF3A1A22),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: const Icon(Icons.delete_outline, color: Color(0xFFFF6B6B)),
+          child: const Icon(Icons.archive_outlined, color: Color(0xFFFF6B6B)),
         ),
         onDismissed: (_) => _delete(context, t),
         child: TaskCard(
@@ -134,11 +149,16 @@ class TaskListPage extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header(
-      {required this.store, required this.sync, required this.appTheme});
+  const _Header({
+    required this.store,
+    required this.sync,
+    required this.appTheme,
+    required this.onOpenArchive,
+  });
   final TaskStore store;
   final SyncService sync;
   final AppTheme appTheme;
+  final VoidCallback onOpenArchive;
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +200,11 @@ class _Header extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'Archive',
+            onPressed: onOpenArchive,
+            icon: Icon(Icons.archive_outlined, color: Ink0.muted),
           ),
           SyncButton(sync: sync),
           PopupMenuButton<String>(

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../data/notes_store.dart';
+import '../data/task_store.dart';
 import '../models/note.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
+import 'archive_page.dart';
 import 'note_card.dart';
 import 'note_form_sheet.dart';
 import 'note_view_page.dart';
@@ -11,10 +13,22 @@ import 'sync_button.dart';
 import 'tag_filter_row.dart';
 
 class NotesListPage extends StatelessWidget {
-  const NotesListPage({super.key, required this.store, required this.sync});
+  const NotesListPage({
+    super.key,
+    required this.store,
+    required this.taskStore,
+    required this.sync,
+  });
 
   final NotesStore store;
+  final TaskStore taskStore;
   final SyncService sync;
+
+  void _openArchive(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ArchivePage(taskStore: taskStore, notesStore: store),
+    ));
+  }
 
   Future<void> _create(BuildContext context) async {
     final n = await showNoteForm(context, existingTags: store.tags);
@@ -33,7 +47,7 @@ class NotesListPage extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-        content: Text('Removed "${note.title}"'),
+        content: Text('Moved "${note.title}" to archive'),
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => store.restore(note),
@@ -51,7 +65,11 @@ class NotesListPage extends StatelessWidget {
             final notes = store.visible;
             return Column(
               children: [
-                _Header(store: store, sync: sync),
+                _Header(
+                  store: store,
+                  sync: sync,
+                  onOpenArchive: () => _openArchive(context),
+                ),
                 if (store.tags.isNotEmpty)
                   TagFilterRow(
                     tags: store.tags,
@@ -80,7 +98,7 @@ class NotesListPage extends StatelessWidget {
                                       color: const Color(0xFF3A1A22),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
-                                    child: const Icon(Icons.delete_outline,
+                                    child: const Icon(Icons.archive_outlined,
                                         color: Color(0xFFFF6B6B)),
                                   ),
                                   onDismissed: (_) => _delete(context, n),
@@ -108,9 +126,14 @@ class NotesListPage extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.store, required this.sync});
+  const _Header({
+    required this.store,
+    required this.sync,
+    required this.onOpenArchive,
+  });
   final NotesStore store;
   final SyncService sync;
+  final VoidCallback onOpenArchive;
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +159,11 @@ class _Header extends StatelessWidget {
                     style: TextStyle(fontSize: 13, color: Ink0.muted)),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'Archive',
+            onPressed: onOpenArchive,
+            icon: Icon(Icons.archive_outlined, color: Ink0.muted),
           ),
           SyncButton(sync: sync),
         ],

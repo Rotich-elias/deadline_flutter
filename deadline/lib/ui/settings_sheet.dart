@@ -509,9 +509,34 @@ class _DigestSheetState extends State<_DigestSheet> {
     if (t != null) setState(() => _time = t);
   }
 
+  /// Inline feedback, because a snackbar would render behind this sheet.
+  String? _notice;
+
+  Future<void> _changeReminderSound() async {
+    final opened = await Notifications.instance.openReminderChannelSettings();
+    if (!mounted) return;
+    setState(() {
+      _notice = opened
+          ? null
+          : 'Could not open Android settings. Use Settings → Apps → '
+              'Deadlines&Notes → Notifications to change the tone.';
+    });
+  }
+
+  Future<void> _sendTestAlert() async {
+    if (!_notificationsOn) await _allowNotifications();
+    if (!mounted) return;
+    await Notifications.instance.showTestReminder();
+    if (!mounted) return;
+    setState(() {
+      _notice = 'Test alert sent — watch for the banner at the top of the '
+          'screen.';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
@@ -527,8 +552,9 @@ class _DigestSheetState extends State<_DigestSheet> {
                   fontSize: 19, fontWeight: FontWeight.w700, color: Ink0.text)),
           const SizedBox(height: 6),
           Text(
-            'One notification each morning with how many tasks are open '
-            'and overdue — instead of a ping for every reminder.',
+            'Reminders pop up and play your notification tone, like a '
+            'message. The daily digest adds one morning summary of what is '
+            'open and overdue.',
             style: TextStyle(fontSize: 13, color: Ink0.muted, height: 1.4),
           ),
           if (_permissionsLoaded) ...[
@@ -570,6 +596,32 @@ class _DigestSheetState extends State<_DigestSheet> {
               ),
             Divider(height: 26, color: Ink0.line),
           ],
+          _PermissionRow(
+            icon: Icons.music_note_outlined,
+            title: 'Reminder sound',
+            status: 'Tone Android plays for deadline alerts',
+            actionLabel: 'Change',
+            statusColor: Ink0.muted,
+            onAction: _changeReminderSound,
+          ),
+          _PermissionRow(
+            icon: Icons.notifications_active_outlined,
+            title: 'Test alert',
+            status: 'See the pop-up and hear the tone now',
+            actionLabel: 'Send',
+            statusColor: Ink0.muted,
+            onAction: _sendTestAlert,
+          ),
+          if (_notice != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                _notice!,
+                style:
+                    TextStyle(fontSize: 11.5, color: Ink0.muted, height: 1.35),
+              ),
+            ),
+          Divider(height: 26, color: Ink0.line),
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             value: _enabled,
@@ -635,12 +687,14 @@ class _PermissionRow extends StatelessWidget {
     required this.status,
     required this.actionLabel,
     required this.onAction,
+    this.statusColor,
   });
   final IconData icon;
   final String title;
   final String status;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final Color? statusColor;
 
   @override
   Widget build(BuildContext context) {
@@ -659,7 +713,8 @@ class _PermissionRow extends StatelessWidget {
                 Text(status,
                     style: TextStyle(
                         fontSize: 12,
-                        color: allowed ? Ink0.muted : const Color(0xFFFF6B6B))),
+                        color: statusColor ??
+                            (allowed ? Ink0.muted : const Color(0xFFFF6B6B)))),
               ],
             ),
           ),

@@ -141,6 +141,8 @@ class Task {
     bool? deleted,
     bool? dirty,
     Repeat? repeat,
+    DateTime? archivedAt,
+    bool clearArchivedAt = false,
     List<int>? reminderMinutes,
     DateTime? updatedAt,
   }) {
@@ -154,6 +156,7 @@ class Task {
       deleted: deleted ?? this.deleted,
       dirty: dirty ?? true,
       repeat: repeat ?? this.repeat,
+      archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
       reminderMinutes: reminderMinutes ?? this.reminderMinutes,
       updatedAt: updatedAt ?? DateTime.now().toUtc(),
     );
@@ -183,6 +186,9 @@ class Task {
         : Repeat.none;
   }
 
+  static DateTime? _parseArchivedAt(Object? raw) =>
+      raw is int ? DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true) : null;
+
   Map<String, Object?> toRow() => {
         'id': id,
         'title': title,
@@ -195,6 +201,7 @@ class Task {
         'dirty': dirty ? 1 : 0,
         'repeat': repeat.index,
         'reminders': reminderMinutes.join(','),
+        'archived_at': archivedAt?.millisecondsSinceEpoch,
       };
 
   factory Task.fromRow(Map<String, Object?> r) => Task(
@@ -210,9 +217,13 @@ class Task {
         deleted: (r['deleted'] as int) == 1,
         dirty: (r['dirty'] as int) == 1,
         repeat: _parseRepeat(r['repeat']),
+        archivedAt: _parseArchivedAt(r['archived_at']),
         reminderMinutes: _parseReminders(r['reminders']),
       );
 
+  /// [archivedAt] is intentionally absent: the archive is device-local, so a
+  /// remote copy can only know that this task was deleted, not when this
+  /// device archived it. [fromJson] uses the delete's `updated_at` instead.
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
@@ -225,16 +236,22 @@ class Task {
         'repeat': repeat.index,
       };
 
-  factory Task.fromJson(Map<String, dynamic> j) => Task(
-        id: j['id'] as String,
-        title: (j['title'] ?? '') as String,
-        notes: j['notes'] as String?,
-        tag: j['tag'] as String?,
-        dueAt: DateTime.parse(j['due_at'] as String).toUtc(),
-        done: j['done'] == true || j['done'] == 1,
-        deleted: j['deleted'] == true || j['deleted'] == 1,
-        updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
-        repeat: _parseRepeat(j['repeat']),
-        dirty: false,
-      );
+  factory Task.fromJson(Map<String, dynamic> j) {
+    final deleted = j['deleted'] == true || j['deleted'] == 1;
+    final updatedAt = DateTime.parse(j['updated_at'] as String).toUtc();
+    return Task(
+      id: j['id'] as String,
+      title: (j['title'] ?? '') as String,
+      notes: j['notes'] as String?,
+      tag: j['tag'] as String?,
+      dueAt: DateTime.parse(j['due_at'] as String).toUtc(),
+      done: j['done'] == true || j['done'] == 1,
+      deleted: deleted,
+      updatedAt: updatedAt,
+      // A delete made on another device should be recoverable here too.
+      archivedAt: deleted ? updatedAt : null,
+      repeat: _parseRepeat(j['repeat']),
+      dirty: false,
+    );
+  }
 }

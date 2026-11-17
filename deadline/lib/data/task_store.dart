@@ -12,17 +12,23 @@ import 'local_db.dart';
 /// clock moves. The clock matters here: a card's colour is a function of "now",
 /// so the list has to redraw even when nothing was edited.
 class TaskStore extends ChangeNotifier {
-  TaskStore(this._db) {
-    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (_tasks.isNotEmpty) notifyListeners();
-    });
+  TaskStore(this._db, {bool startTicker = true}) {
+    if (startTicker) {
+      _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (_tasks.isNotEmpty) notifyListeners();
+      });
+    }
   }
 
   final LocalDb _db;
-  late final Timer _ticker;
+  Timer? _ticker;
 
   List<Task> _tasks = [];
   List<Task> get tasks => List.unmodifiable(_tasks);
+
+  /// Deleted tasks the user can still bring back, newest deletion first.
+  List<Task> _archived = [];
+  List<Task> get archived => List.unmodifiable(_archived);
 
   List<String> tags = [];
   String? tagFilter;
@@ -59,6 +65,7 @@ class TaskStore extends ChangeNotifier {
 
   Future<void> load() async {
     _tasks = await _db.all();
+    _archived = await _db.archivedTasks();
     tags = await _db.distinctTags();
     if (tagFilter != null && !tags.contains(tagFilter)) tagFilter = null;
     notifyListeners();
@@ -132,26 +139,44 @@ class TaskStore extends ChangeNotifier {
     onLocalChange?.call();
   }
 
-  /// Soft delete. The row sticks around as a tombstone until the server has
-  /// been told, which is what stops a deleted task reappearing on next sync.
+  /// Archive a task. It leaves the list and its reminders stop, but the row
+  /// stays recoverable until it is permanently deleted.
   Future<void> remove(Task t) async {
-    await _db.upsert(t.copyWith(deleted: true));
+    await _db.upsert(t.copyWith(
+      deleted: true,
+      archivedAt: DateTime.now().toUtc(),
+    ));
     await Notifications.instance.cancelFor(t.id);
     await load();
     onLocalChange?.call();
   }
 
   Future<void> restore(Task t) async {
-    final back = t.copyWith(deleted: false);
+    final back = t.copyWith(deleted: false, clearArchivedAt: true);
     await _db.upsert(back);
     await Notifications.instance.scheduleFor(back);
     await load();
     onLocalChange?.call();
   }
 
+  /// Delete one archived task for good. Clearing [Task.archivedAt] leaves a
+  /// tombstone so the delete reaches the server and other devices.
+  Future<void> purge(Task t) async {
+    await _db.upsert(t.copyWith(deleted: true, clearArchivedAt: true));
+    await load();
+    onLocalChange?.call();
+  }
+
+  Future<void> emptyArchive() async {
+    if (_archived.isEmpty) return;
+    await _db.emptyTaskArchive();
+    await load();
+    onLocalChange?.call();
+  }
+
   @override
   void dispose() {
-    _ticker.cancel();
+    _ticker?.cancel();
     super.dispose();
   }
 }

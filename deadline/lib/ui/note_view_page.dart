@@ -16,7 +16,8 @@ class NoteViewPage extends StatelessWidget {
   final String noteId;
 
   Future<void> _edit(BuildContext context, Note note) async {
-    final n = await showNoteForm(context, existing: note, existingTags: store.tags);
+    final n =
+        await showNoteForm(context, existing: note, existingTags: store.tags);
     if (n != null) await store.save(n);
   }
 
@@ -27,7 +28,7 @@ class NoteViewPage extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-        content: Text('Removed "${note.title}"'),
+        content: Text('Moved "${note.title}" to archive'),
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => store.restore(note),
@@ -62,7 +63,8 @@ class NoteViewPage extends StatelessWidget {
                 onPressed: () => _edit(context, note),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Move to archive',
+                icon: const Icon(Icons.archive_outlined),
                 onPressed: () => _delete(context, note),
               ),
               const SizedBox(width: 4),

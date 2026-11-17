@@ -40,10 +40,15 @@ class _HomeShellState extends State<HomeShell> {
         children: [
           TaskListPage(
             store: widget.store,
+            notesStore: widget.notesStore,
             sync: widget.sync,
             appTheme: widget.appTheme,
           ),
-          NotesListPage(store: widget.notesStore, sync: widget.sync),
+          NotesListPage(
+            store: widget.notesStore,
+            taskStore: widget.store,
+            sync: widget.sync,
+          ),
         ],
       ),
       bottomNavigationBar: Column(

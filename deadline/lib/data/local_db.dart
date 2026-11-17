@@ -14,7 +14,7 @@ class LocalDb {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'deadline.db'),
-      version: 3,
+      version: 4,
       onCreate: (d, _) async {
         await d.execute('''
           CREATE TABLE tasks (
@@ -28,12 +28,15 @@ class LocalDb {
             deleted     INTEGER NOT NULL DEFAULT 0,
             dirty       INTEGER NOT NULL DEFAULT 1,
             repeat      INTEGER NOT NULL DEFAULT 0,
-            reminders   TEXT
+            reminders   TEXT,
+            archived_at INTEGER
           )
         ''');
         await d.execute('CREATE INDEX idx_tasks_due ON tasks(due_at)');
         await d.execute('CREATE INDEX idx_tasks_dirty ON tasks(dirty)');
         await d.execute('CREATE INDEX idx_tasks_tag ON tasks(tag)');
+        await d.execute(
+            'CREATE INDEX idx_tasks_archived ON tasks(deleted, archived_at)');
         await _createNotesTable(d);
       },
       onUpgrade: (d, oldVersion, newVersion) async {
@@ -46,6 +49,16 @@ class LocalDb {
         }
         if (oldVersion < 3) {
           await _createNotesTable(d);
+        }
+        if (oldVersion < 4) {
+          // Deletes now stay recoverable in an archive. Existing tombstones
+          // are left without an archive stamp so they purge as before.
+          await d.execute('ALTER TABLE tasks ADD COLUMN archived_at INTEGER');
+          await d.execute('ALTER TABLE notes ADD COLUMN archived_at INTEGER');
+          await d.execute(
+              'CREATE INDEX idx_tasks_archived ON tasks(deleted, archived_at)');
+          await d.execute(
+              'CREATE INDEX idx_notes_archived ON notes(deleted, archived_at)');
         }
       },
     );
@@ -60,12 +73,15 @@ class LocalDb {
         tag         TEXT,
         updated_at  INTEGER NOT NULL,
         deleted     INTEGER NOT NULL DEFAULT 0,
-        dirty       INTEGER NOT NULL DEFAULT 1
+        dirty       INTEGER NOT NULL DEFAULT 1,
+        archived_at INTEGER
       )
     ''');
     await d.execute('CREATE INDEX idx_notes_dirty ON notes(dirty)');
     await d.execute('CREATE INDEX idx_notes_tag ON notes(tag)');
     await d.execute('CREATE INDEX idx_notes_updated ON notes(updated_at)');
+    await d.execute(
+        'CREATE INDEX idx_notes_archived ON notes(deleted, archived_at)');
   }
 
   /// Live tasks, soonest deadline first. Completed ones sink to the bottom.
@@ -103,8 +119,34 @@ class LocalDb {
   }
 
   /// Tombstones the server has acknowledged no longer need to be kept.
+  /// Archived rows are excluded: they stay until permanently deleted.
   Future<void> purgeSyncedDeletes() async {
-    await db.delete('tasks', where: 'deleted = 1 AND dirty = 0');
+    await db.delete('tasks',
+        where: 'deleted = 1 AND dirty = 0 AND archived_at IS NULL');
+  }
+
+  /// Deleted tasks kept in the archive, most recently deleted first.
+  Future<List<Task>> archivedTasks() async {
+    final rows = await db.query(
+      'tasks',
+      where: 'deleted = 1 AND archived_at IS NOT NULL',
+      orderBy: 'archived_at DESC',
+    );
+    return rows.map(Task.fromRow).toList();
+  }
+
+  /// Turns every archived task into a tombstone so the deletes travel to the
+  /// server, then the normal sync purge can remove them.
+  Future<void> emptyTaskArchive() async {
+    await db.update(
+      'tasks',
+      {
+        'archived_at': null,
+        'dirty': 1,
+        'updated_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+      },
+      where: 'deleted = 1 AND archived_at IS NOT NULL',
+    );
   }
 
   /// Distinct, non-empty tags in use, alphabetical — powers the filter row.
@@ -156,7 +198,32 @@ class LocalDb {
   }
 
   Future<void> purgeSyncedNoteDeletes() async {
-    await db.delete('notes', where: 'deleted = 1 AND dirty = 0');
+    await db.delete('notes',
+        where: 'deleted = 1 AND dirty = 0 AND archived_at IS NULL');
+  }
+
+  /// Deleted notes kept in the archive, most recently deleted first.
+  Future<List<Note>> archivedNotes() async {
+    final rows = await db.query(
+      'notes',
+      where: 'deleted = 1 AND archived_at IS NOT NULL',
+      orderBy: 'archived_at DESC',
+    );
+    return rows.map(Note.fromRow).toList();
+  }
+
+  /// Turns every archived note into a tombstone so the deletes travel to the
+  /// server, then the normal sync purge can remove them.
+  Future<void> emptyNoteArchive() async {
+    await db.update(
+      'notes',
+      {
+        'archived_at': null,
+        'dirty': 1,
+        'updated_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+      },
+      where: 'deleted = 1 AND archived_at IS NOT NULL',
+    );
   }
 
   Future<List<String>> distinctNoteTags() async {

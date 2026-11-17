@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -15,6 +16,37 @@ const _snoozeAction = 'snooze_1h';
 /// A reminder inside this many minutes of the deadline is treated as
 /// critical: maximum importance, hard to miss.
 const _alarmThresholdMinutes = 60;
+
+/// Versioned channel ids. Android locks a channel's importance, sound and
+/// pop-up behaviour when it is first created, so older installs that created
+/// the original `deadlines` channel keep its settings forever. Bumping the id
+/// gives every install a fresh channel that is guaranteed to pop up and play
+/// the phone's notification tone.
+const _reminderChannelId = 'deadlines_reminders_v2';
+const _reminderChannelName = 'Deadline reminders';
+const _alarmChannelId = 'deadlines_alarm_v2';
+const _alarmChannelName = 'Urgent deadline alerts';
+const _channelsMigratedKey = 'notifications.channels_v2';
+
+const _reminderChannel = AndroidNotificationChannel(
+  _reminderChannelId,
+  _reminderChannelName,
+  description: 'A pop-up reminder before a task is due',
+  importance: Importance.max,
+  playSound: true,
+  enableVibration: true,
+  showBadge: true,
+);
+
+const _alarmChannel = AndroidNotificationChannel(
+  _alarmChannelId,
+  _alarmChannelName,
+  description: 'Pop-up alert when a task is due within the hour or overdue',
+  importance: Importance.max,
+  playSound: true,
+  enableVibration: true,
+  showBadge: true,
+);
 
 const _androidActions = <AndroidNotificationAction>[
   AndroidNotificationAction(_markDoneAction, 'Mark done',
@@ -32,13 +64,21 @@ final _iosCategory = DarwinNotificationCategory(
   ],
 );
 
+/// Head-up reminder: maximum importance plus the default notification sound,
+/// so it behaves like a WhatsApp or SMS alert. The tone is whatever the user
+/// has picked for this channel in Android settings.
 const _details = NotificationDetails(
   android: AndroidNotificationDetails(
-    'deadlines',
-    'Deadline reminders',
-    channelDescription: 'Warnings before a task is due',
-    importance: Importance.high,
-    priority: Priority.high,
+    _reminderChannelId,
+    _reminderChannelName,
+    channelDescription: 'A pop-up reminder before a task is due',
+    importance: Importance.max,
+    priority: Priority.max,
+    category: AndroidNotificationCategory.reminder,
+    visibility: NotificationVisibility.public,
+    channelShowBadge: true,
+    playSound: true,
+    enableVibration: true,
     actions: _androidActions,
   ),
   iOS: DarwinNotificationDetails(categoryIdentifier: 'deadlineActions'),
@@ -46,13 +86,17 @@ const _details = NotificationDetails(
 
 const _alarmDetails = NotificationDetails(
   android: AndroidNotificationDetails(
-    'deadlines_alarm',
-    'Urgent deadline alerts',
+    _alarmChannelId,
+    _alarmChannelName,
     channelDescription:
-        'High-priority alert when a task is due within the hour or overdue',
+        'Pop-up alert when a task is due within the hour or overdue',
     importance: Importance.max,
     priority: Priority.max,
     category: AndroidNotificationCategory.alarm,
+    visibility: NotificationVisibility.public,
+    channelShowBadge: true,
+    playSound: true,
+    enableVibration: true,
     actions: _androidActions,
   ),
   iOS: DarwinNotificationDetails(
@@ -142,6 +186,16 @@ class Notifications {
   /// Negative so it can never collide with a task's positive id range.
   static const _digestId = -424242;
 
+  /// The "Test alert" notification, also outside the task id range.
+  static const _testId = -424243;
+
+  /// Native bridge for opening this app's reminder-channel settings page, so
+  /// the user can pick the tone Android plays for reminders.
+  static const _native = MethodChannel('deadline/notifications');
+
+  /// Whether channels were already created or migrated in this isolate.
+  bool _channelsReady = false;
+
   /// Prepares timezone data and the plugin. Deliberately does not ask for
   /// permissions: that happens after the first frame (or from settings) so a
   /// slow system dialog box can never delay or break launch.
@@ -169,7 +223,73 @@ class Notifications {
       onDidReceiveNotificationResponse: _foregroundHandler,
       onDidReceiveBackgroundNotificationResponse: notificationBackgroundHandler,
     );
+    await _ensureChannels();
     _ready = true;
+  }
+
+  /// Creates the reminder channels, replacing the first-version ones once.
+  ///
+  /// A channel's importance, sound and pop-up behaviour cannot be changed
+  /// after Android creates it — not by the app, and not by reinstalling over
+  /// itself. The old `deadlines` channel was created at `high` importance
+  /// without an explicit sound, so installs that had it get a silent banner
+  /// forever. Deleting it once and moving to fresh `_v2` ids is the only way
+  /// to guarantee a pop-up with the phone's notification tone.
+  Future<void> _ensureChannels() async {
+    if (_channelsReady) return;
+    final android = _android;
+    if (android == null) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool(_channelsMigratedKey) ?? false)) {
+        await android.deleteNotificationChannel('deadlines');
+        await android.deleteNotificationChannel('deadlines_alarm');
+        await prefs.setBool(_channelsMigratedKey, true);
+      }
+      await android.createNotificationChannel(_reminderChannel);
+      await android.createNotificationChannel(_alarmChannel);
+      _channelsReady = true;
+    } catch (e) {
+      // Recreate next launch: channel creation is idempotent, and the pref
+      // only sticks once the old channels are actually gone.
+      debugPrint('Could not prepare notification channels: $e');
+    }
+  }
+
+  /// Fires a reminder immediately so the user can confirm the pop-up and the
+  /// tone without waiting for a real deadline.
+  Future<void> showTestReminder() async {
+    await _ensureReady();
+    try {
+      await _plugin.show(
+        _testId,
+        'Reminder test',
+        'This is how a deadline reminder pops up and sounds.',
+        _details,
+      );
+    } catch (e) {
+      debugPrint('Could not show the test reminder: $e');
+    }
+  }
+
+  /// Opens Android's settings page for the reminder channel, where the user
+  /// can change its sound, importance and pop-up behaviour. Returns false on
+  /// platforms that have no such screen.
+  Future<bool> openReminderChannelSettings() async {
+    await _ensureReady();
+    try {
+      return await _native.invokeMethod<bool>(
+            'openChannelSettings',
+            {'channelId': _reminderChannelId},
+          ) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException catch (e) {
+      debugPrint('Could not open notification channel settings: $e');
+      return false;
+    }
   }
 
   AndroidFlutterLocalNotificationsPlugin? get _android =>

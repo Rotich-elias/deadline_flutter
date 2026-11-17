@@ -13,6 +13,10 @@ class NotesStore extends ChangeNotifier {
   List<Note> _notes = [];
   List<Note> get notes => List.unmodifiable(_notes);
 
+  /// Deleted notes the user can still bring back, newest deletion first.
+  List<Note> _archived = [];
+  List<Note> get archived => List.unmodifiable(_archived);
+
   List<String> tags = [];
   String? tagFilter;
 
@@ -30,6 +34,7 @@ class NotesStore extends ChangeNotifier {
 
   Future<void> load() async {
     _notes = await _db.allNotes();
+    _archived = await _db.archivedNotes();
     tags = await _db.distinctNoteTags();
     if (tagFilter != null && !tags.contains(tagFilter)) tagFilter = null;
     notifyListeners();
@@ -47,14 +52,32 @@ class NotesStore extends ChangeNotifier {
     onLocalChange?.call();
   }
 
+  /// Archive a note so it leaves the list but stays recoverable.
   Future<void> remove(Note n) async {
-    await _db.upsertNote(n.copyWith(deleted: true));
+    await _db.upsertNote(n.copyWith(
+      deleted: true,
+      archivedAt: DateTime.now().toUtc(),
+    ));
     await load();
     onLocalChange?.call();
   }
 
   Future<void> restore(Note n) async {
-    await _db.upsertNote(n.copyWith(deleted: false));
+    await _db.upsertNote(n.copyWith(deleted: false, clearArchivedAt: true));
+    await load();
+    onLocalChange?.call();
+  }
+
+  /// Delete one archived note for good, leaving a tombstone for sync.
+  Future<void> purge(Note n) async {
+    await _db.upsertNote(n.copyWith(deleted: true, clearArchivedAt: true));
+    await load();
+    onLocalChange?.call();
+  }
+
+  Future<void> emptyArchive() async {
+    if (_archived.isEmpty) return;
+    await _db.emptyNoteArchive();
     await load();
     onLocalChange?.call();
   }
