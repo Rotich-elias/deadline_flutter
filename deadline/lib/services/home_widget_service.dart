@@ -20,8 +20,7 @@ class HomeWidgetService {
     } else {
       final next = open.first;
       await HomeWidget.saveWidgetData<String>('title', next.title);
-      await HomeWidget.saveWidgetData<String>(
-          'countdown', countdownOf(next));
+      await HomeWidget.saveWidgetData<String>('countdown', countdownOf(next));
       await HomeWidget.saveWidgetData<String>(
           'overdue', overdueCount > 0 ? '$overdueCount overdue' : '');
     }

@@ -67,7 +67,8 @@ class _TaskFormState extends State<_TaskForm> {
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
     );
     if (d == null) return;
-    setState(() => _due = DateTime(d.year, d.month, d.day, _due.hour, _due.minute));
+    setState(
+        () => _due = DateTime(d.year, d.month, d.day, _due.hour, _due.minute));
   }
 
   Future<void> _pickTime() async {
@@ -95,7 +96,8 @@ class _TaskFormState extends State<_TaskForm> {
   void _submit() {
     final title = _title.text.trim();
     if (title.isEmpty) {
-      setState(() => _error = 'Give the task a name so you recognise it later.');
+      setState(
+          () => _error = 'Give the task a name so you recognise it later.');
       return;
     }
     final notes = _notes.text.trim();
@@ -202,10 +204,12 @@ class _TaskFormState extends State<_TaskForm> {
                 runSpacing: 8,
                 children: [
                   for (final t in tagSuggestions)
-                    _Quick(label: t, onTap: () {
-                      _tag.text = t;
-                      setState(() {});
-                    }),
+                    _Quick(
+                        label: t,
+                        onTap: () {
+                          _tag.text = t;
+                          setState(() {});
+                        }),
                 ],
               ),
             ],
@@ -357,8 +361,7 @@ class _PickerButton extends StatelessWidget {
           children: [
             Icon(icon, size: 16, color: Ink0.muted),
             const SizedBox(width: 8),
-            Text(label,
-                style: TextStyle(fontSize: 14, color: Ink0.text)),
+            Text(label, style: TextStyle(fontSize: 14, color: Ink0.text)),
           ],
         ),
       ),
@@ -379,8 +382,7 @@ class _Quick extends StatelessWidget {
       backgroundColor: Ink0.surfaceHi,
       side: BorderSide(color: Ink0.line),
       labelStyle: TextStyle(color: Ink0.text),
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
   }
 }
@@ -402,8 +404,7 @@ class _SelectableChip extends StatelessWidget {
       selectedColor: Ink0.line,
       side: BorderSide(color: selected ? Colors.transparent : Ink0.line),
       labelStyle: TextStyle(color: Ink0.text),
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
   }
 }

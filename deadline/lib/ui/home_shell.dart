@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/notes_store.dart';
 import '../data/task_store.dart';
+import '../services/note_import.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import 'notes_list_page.dart';
@@ -31,6 +32,51 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  bool _draining = false;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedNotesInbox.instance.addListener(_drainSharedNotes);
+    SharedNotesInbox.instance.start();
+    _drainSharedNotes();
+  }
+
+  @override
+  void dispose() {
+    SharedNotesInbox.instance.removeListener(_drainSharedNotes);
+    super.dispose();
+  }
+
+  /// Imports notes shared in from another app (Samsung Notes' "Text file"
+  /// share lands here) and jumps to the Notes tab so the result is visible.
+  Future<void> _drainSharedNotes() async {
+    if (_draining) return;
+    _draining = true;
+    var imported = 0;
+    var duplicates = 0;
+    try {
+      while (true) {
+        final texts = SharedNotesInbox.instance.take();
+        if (texts.isEmpty) break;
+        final outcome = await NoteImport.importAll(widget.notesStore, texts);
+        imported += outcome.imported;
+        duplicates += outcome.duplicates;
+      }
+    } finally {
+      _draining = false;
+    }
+
+    if (!mounted || (imported == 0 && duplicates == 0)) return;
+    if (imported > 0) setState(() => _index = 1);
+
+    final message = imported == 0
+        ? 'Those notes are already in your app'
+        : 'Imported $imported note${imported == 1 ? '' : 's'} from Samsung Notes';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {

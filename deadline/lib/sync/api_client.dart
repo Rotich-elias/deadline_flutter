@@ -27,8 +27,7 @@ class ApiClient<T> implements SyncBackend<T> {
     required List<T> changes,
     DateTime? since,
   }) async {
-    final uri =
-        Uri.parse('${baseUrl.replaceAll(RegExp(r"/+$"), "")}$path');
+    final uri = Uri.parse('${baseUrl.replaceAll(RegExp(r"/+$"), "")}$path');
 
     final res = await http
         .post(

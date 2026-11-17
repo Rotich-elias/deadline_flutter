@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 import '../services/home_widget_service.dart';
 import '../services/notifications.dart';
+import '../utils/search.dart';
 import 'local_db.dart';
 
 /// Holds the visible task list and republishes it whenever the data or the
@@ -33,6 +34,9 @@ class TaskStore extends ChangeNotifier {
   List<String> tags = [];
   String? tagFilter;
 
+  /// Free-text filter for the deadline list. Empty means "show everything".
+  String query = '';
+
   bool showCompleted = false;
 
   bool digestEnabled = true;
@@ -49,10 +53,20 @@ class TaskStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setQuery(String value) {
+    final next = value.trim();
+    if (next == query) return;
+    query = next;
+    notifyListeners();
+  }
+
   List<Task> get visible {
     var list = showCompleted ? _tasks : _tasks.where((t) => !t.done).toList();
     if (tagFilter != null) {
       list = list.where((t) => t.tag == tagFilter).toList();
+    }
+    if (query.isNotEmpty) {
+      list = filterByQuery(list, query, (t) => [t.title, t.notes, t.tag]);
     }
     return list;
   }

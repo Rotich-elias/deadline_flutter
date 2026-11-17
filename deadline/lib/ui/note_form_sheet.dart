@@ -52,7 +52,8 @@ class _NoteFormState extends State<_NoteForm> {
   void _submit() {
     final title = _title.text.trim();
     if (title.isEmpty) {
-      setState(() => _error = 'Give the note a title so you recognise it later.');
+      setState(
+          () => _error = 'Give the note a title so you recognise it later.');
       return;
     }
     final body = _body.text.trim();

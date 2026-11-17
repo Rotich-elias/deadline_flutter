@@ -8,13 +8,14 @@ import '../theme.dart';
 import '../utils/urgency.dart';
 import 'archive_page.dart';
 import 'privacy_page.dart';
+import 'search_field.dart';
 import 'settings_sheet.dart';
 import 'sync_button.dart';
 import 'tag_filter_row.dart';
 import 'task_card.dart';
 import 'task_form_sheet.dart';
 
-class TaskListPage extends StatelessWidget {
+class TaskListPage extends StatefulWidget {
   const TaskListPage({
     super.key,
     required this.store,
@@ -28,25 +29,58 @@ class TaskListPage extends StatelessWidget {
   final SyncService sync;
   final AppTheme appTheme;
 
+  @override
+  State<TaskListPage> createState() => _TaskListPageState();
+}
+
+class _TaskListPageState extends State<TaskListPage> {
+  final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _searchController.clear();
+        widget.store.setQuery('');
+      }
+    });
+    if (_searching) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _searchFocus.requestFocus());
+    } else {
+      _searchFocus.unfocus();
+    }
+  }
+
   void _openArchive(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ArchivePage(taskStore: store, notesStore: notesStore),
+      builder: (_) =>
+          ArchivePage(taskStore: widget.store, notesStore: widget.notesStore),
     ));
   }
 
   Future<void> _create(BuildContext context) async {
-    final t = await showTaskForm(context, existingTags: store.tags);
-    if (t != null) await store.add(t);
+    final t = await showTaskForm(context, existingTags: widget.store.tags);
+    if (t != null) await widget.store.add(t);
   }
 
   Future<void> _edit(BuildContext context, Task task) async {
-    final t =
-        await showTaskForm(context, existing: task, existingTags: store.tags);
-    if (t != null) await store.save(t);
+    final t = await showTaskForm(context,
+        existing: task, existingTags: widget.store.tags);
+    if (t != null) await widget.store.save(t);
   }
 
   Future<void> _delete(BuildContext context, Task task) async {
-    await store.remove(task);
+    await widget.store.remove(task);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -54,7 +88,7 @@ class TaskListPage extends StatelessWidget {
         content: Text('Moved "${task.title}" to archive'),
         action: SnackBarAction(
           label: 'Undo',
-          onPressed: () => store.restore(task),
+          onPressed: () => widget.store.restore(task),
         ),
       ));
   }
@@ -64,28 +98,37 @@ class TaskListPage extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: Listenable.merge([store, sync]),
+          listenable: Listenable.merge([widget.store, widget.sync]),
           builder: (context, _) {
-            final tasks = store.visible;
+            final tasks = widget.store.visible;
             return Column(
               children: [
                 _Header(
-                  store: store,
-                  sync: sync,
-                  appTheme: appTheme,
+                  store: widget.store,
+                  sync: widget.sync,
+                  appTheme: widget.appTheme,
+                  searching: _searching,
+                  onToggleSearch: _toggleSearch,
                   onOpenArchive: () => _openArchive(context),
                 ),
-                if (store.tags.isNotEmpty)
+                if (_searching)
+                  SearchField(
+                    controller: _searchController,
+                    focusNode: _searchFocus,
+                    hintText: 'Search deadlines',
+                    onChanged: widget.store.setQuery,
+                  ),
+                if (widget.store.tags.isNotEmpty)
                   TagFilterRow(
-                    tags: store.tags,
-                    selected: store.tagFilter,
-                    onSelect: store.setTagFilter,
+                    tags: widget.store.tags,
+                    selected: widget.store.tagFilter,
+                    onSelect: widget.store.setTagFilter,
                   ),
                 Expanded(
                   child: tasks.isEmpty
-                      ? const _Empty()
+                      ? _Empty(query: widget.store.query)
                       : RefreshIndicator(
-                          onRefresh: sync.syncNow,
+                          onRefresh: widget.sync.syncNow,
                           child: _buildList(context, tasks),
                         ),
                 ),
@@ -134,7 +177,7 @@ class TaskListPage extends StatelessWidget {
         onDismissed: (_) => _delete(context, t),
         child: TaskCard(
           task: t,
-          onToggle: () => store.toggleDone(t),
+          onToggle: () => widget.store.toggleDone(t),
           onEdit: () => _edit(context, t),
         ),
       ));
@@ -153,11 +196,15 @@ class _Header extends StatelessWidget {
     required this.store,
     required this.sync,
     required this.appTheme,
+    required this.searching,
+    required this.onToggleSearch,
     required this.onOpenArchive,
   });
   final TaskStore store;
   final SyncService sync;
   final AppTheme appTheme;
+  final bool searching;
+  final VoidCallback onToggleSearch;
   final VoidCallback onOpenArchive;
 
   @override
@@ -200,6 +247,12 @@ class _Header extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: searching ? 'Close search' : 'Search',
+            onPressed: onToggleSearch,
+            icon:
+                Icon(searching ? Icons.close : Icons.search, color: Ink0.muted),
           ),
           IconButton(
             tooltip: 'Archive',
@@ -285,7 +338,11 @@ class _GroupHeader extends StatelessWidget {
 }
 
 class _Empty extends StatelessWidget {
-  const _Empty();
+  const _Empty({required this.query});
+
+  final String query;
+
+  bool get _searching => query.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -295,18 +352,21 @@ class _Empty extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.event_available,
+            Icon(_searching ? Icons.search_off : Icons.event_available,
                 size: 44, color: Urgency.week.color.withValues(alpha: 0.6)),
             const SizedBox(height: 14),
             Text(
-              'Nothing due',
+              _searching ? 'No matches' : 'Nothing due',
               style: TextStyle(
                   fontSize: 17, fontWeight: FontWeight.w600, color: Ink0.text),
             ),
             const SizedBox(height: 6),
             Text(
-              'Add an assignment or lab and it will sit at the top of the '
-              'list as the date gets close.',
+              _searching
+                  ? 'Nothing matches “$query”. Try another word, or clear '
+                      'the search.'
+                  : 'Add an assignment or lab and it will sit at the top of '
+                      'the list as the date gets close.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13.5, color: Ink0.muted, height: 1.45),
             ),

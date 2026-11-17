@@ -75,11 +75,13 @@ class AppTheme extends ChangeNotifier {
     mode = m;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefKey, switch (m) {
-      ThemeMode.light => 'light',
-      ThemeMode.dark => 'dark',
-      ThemeMode.system => 'system',
-    });
+    await prefs.setString(
+        _prefKey,
+        switch (m) {
+          ThemeMode.light => 'light',
+          ThemeMode.dark => 'dark',
+          ThemeMode.system => 'system',
+        });
   }
 
   /// Call once per build, before any descendant reads [Ink0], so the two
@@ -127,8 +129,7 @@ ThemeData buildTheme(Brightness brightness) {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: palette.surfaceHi,

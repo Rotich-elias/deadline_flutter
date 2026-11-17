@@ -6,13 +6,15 @@ import '../models/note.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import 'archive_page.dart';
+import 'note_import_ui.dart';
 import 'note_card.dart';
 import 'note_form_sheet.dart';
 import 'note_view_page.dart';
+import 'search_field.dart';
 import 'sync_button.dart';
 import 'tag_filter_row.dart';
 
-class NotesListPage extends StatelessWidget {
+class NotesListPage extends StatefulWidget {
   const NotesListPage({
     super.key,
     required this.store,
@@ -24,25 +26,63 @@ class NotesListPage extends StatelessWidget {
   final TaskStore taskStore;
   final SyncService sync;
 
+  @override
+  State<NotesListPage> createState() => _NotesListPageState();
+}
+
+class _NotesListPageState extends State<NotesListPage> {
+  final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _searchController.clear();
+        widget.store.setQuery('');
+      }
+    });
+    if (_searching) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _searchFocus.requestFocus());
+    } else {
+      _searchFocus.unfocus();
+    }
+  }
+
   void _openArchive(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ArchivePage(taskStore: taskStore, notesStore: store),
+      builder: (_) =>
+          ArchivePage(taskStore: widget.taskStore, notesStore: widget.store),
     ));
   }
 
   Future<void> _create(BuildContext context) async {
-    final n = await showNoteForm(context, existingTags: store.tags);
-    if (n != null) await store.add(n);
+    final n = await showNoteForm(context, existingTags: widget.store.tags);
+    if (n != null) await widget.store.add(n);
   }
+
+  void _openImportHelp(BuildContext context) => showSamsungImportHelp(context);
+
+  void _pasteNote(BuildContext context) =>
+      showPasteNoteDialog(context, widget.store);
 
   void _open(BuildContext context, Note note) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => NoteViewPage(store: store, noteId: note.id),
+      builder: (_) => NoteViewPage(store: widget.store, noteId: note.id),
     ));
   }
 
   Future<void> _delete(BuildContext context, Note note) async {
-    await store.remove(note);
+    await widget.store.remove(note);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -50,7 +90,7 @@ class NotesListPage extends StatelessWidget {
         content: Text('Moved "${note.title}" to archive'),
         action: SnackBarAction(
           label: 'Undo',
-          onPressed: () => store.restore(note),
+          onPressed: () => widget.store.restore(note),
         ),
       ));
   }
@@ -60,27 +100,38 @@ class NotesListPage extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: Listenable.merge([store, sync]),
+          listenable: Listenable.merge([widget.store, widget.sync]),
           builder: (context, _) {
-            final notes = store.visible;
+            final notes = widget.store.visible;
             return Column(
               children: [
                 _Header(
-                  store: store,
-                  sync: sync,
+                  store: widget.store,
+                  sync: widget.sync,
+                  searching: _searching,
+                  onToggleSearch: _toggleSearch,
                   onOpenArchive: () => _openArchive(context),
+                  onImportHelp: () => _openImportHelp(context),
+                  onPasteNote: () => _pasteNote(context),
                 ),
-                if (store.tags.isNotEmpty)
+                if (_searching)
+                  SearchField(
+                    controller: _searchController,
+                    focusNode: _searchFocus,
+                    hintText: 'Search notes',
+                    onChanged: widget.store.setQuery,
+                  ),
+                if (widget.store.tags.isNotEmpty)
                   TagFilterRow(
-                    tags: store.tags,
-                    selected: store.tagFilter,
-                    onSelect: store.setTagFilter,
+                    tags: widget.store.tags,
+                    selected: widget.store.tagFilter,
+                    onSelect: widget.store.setTagFilter,
                   ),
                 Expanded(
                   child: notes.isEmpty
-                      ? const _Empty()
+                      ? _Empty(query: widget.store.query)
                       : RefreshIndicator(
-                          onRefresh: sync.syncNow,
+                          onRefresh: widget.sync.syncNow,
                           child: ListView(
                             padding: const EdgeInsets.only(top: 8, bottom: 96),
                             physics: const AlwaysScrollableScrollPhysics(),
@@ -129,11 +180,19 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.store,
     required this.sync,
+    required this.searching,
+    required this.onToggleSearch,
     required this.onOpenArchive,
+    required this.onImportHelp,
+    required this.onPasteNote,
   });
   final NotesStore store;
   final SyncService sync;
+  final bool searching;
+  final VoidCallback onToggleSearch;
   final VoidCallback onOpenArchive;
+  final VoidCallback onImportHelp;
+  final VoidCallback onPasteNote;
 
   @override
   Widget build(BuildContext context) {
@@ -161,11 +220,36 @@ class _Header extends StatelessWidget {
             ),
           ),
           IconButton(
+            tooltip: searching ? 'Close search' : 'Search',
+            onPressed: onToggleSearch,
+            icon:
+                Icon(searching ? Icons.close : Icons.search, color: Ink0.muted),
+          ),
+          IconButton(
             tooltip: 'Archive',
             onPressed: onOpenArchive,
             icon: Icon(Icons.archive_outlined, color: Ink0.muted),
           ),
           SyncButton(sync: sync),
+          PopupMenuButton<String>(
+            tooltip: 'Import notes',
+            icon: Icon(Icons.more_vert, color: Ink0.muted),
+            onSelected: (value) {
+              switch (value) {
+                case 'help':
+                  onImportHelp();
+                case 'paste':
+                  onPasteNote();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'help',
+                child: Text('Import from Samsung Notes'),
+              ),
+              PopupMenuItem(value: 'paste', child: Text('Paste a note')),
+            ],
+          ),
         ],
       ),
     );
@@ -173,7 +257,11 @@ class _Header extends StatelessWidget {
 }
 
 class _Empty extends StatelessWidget {
-  const _Empty();
+  const _Empty({required this.query});
+
+  final String query;
+
+  bool get _searching => query.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -183,17 +271,21 @@ class _Empty extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.sticky_note_2_outlined, size: 44, color: Ink0.muted),
+            Icon(_searching ? Icons.search_off : Icons.sticky_note_2_outlined,
+                size: 44, color: Ink0.muted),
             const SizedBox(height: 14),
             Text(
-              'No notes yet',
+              _searching ? 'No matches' : 'No notes yet',
               style: TextStyle(
                   fontSize: 17, fontWeight: FontWeight.w600, color: Ink0.text),
             ),
             const SizedBox(height: 6),
             Text(
-              'Anything worth remembering that doesn\'t need a deadline '
-              'goes here.',
+              _searching
+                  ? 'Nothing matches “$query”. Try another word, or clear '
+                      'the search.'
+                  : 'Anything worth remembering that doesn\'t need a deadline '
+                      'goes here.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13.5, color: Ink0.muted, height: 1.45),
             ),

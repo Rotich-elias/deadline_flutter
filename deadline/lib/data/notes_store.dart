@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/note.dart';
+import '../utils/search.dart';
 import 'local_db.dart';
 
 /// Holds the visible note list. Simpler than TaskStore — nothing here is a
@@ -20,14 +21,31 @@ class NotesStore extends ChangeNotifier {
   List<String> tags = [];
   String? tagFilter;
 
+  /// Free-text filter for the note list. Empty means "show everything".
+  String query = '';
+
   void setTagFilter(String? tag) {
     tagFilter = tag;
     notifyListeners();
   }
 
-  List<Note> get visible => tagFilter == null
-      ? _notes
-      : _notes.where((n) => n.tag == tagFilter).toList();
+  void setQuery(String value) {
+    final next = value.trim();
+    if (next == query) return;
+    query = next;
+    notifyListeners();
+  }
+
+  List<Note> get visible {
+    var list = _notes;
+    if (tagFilter != null) {
+      list = list.where((n) => n.tag == tagFilter).toList();
+    }
+    if (query.isNotEmpty) {
+      list = filterByQuery(list, query, (n) => [n.title, n.body, n.tag]);
+    }
+    return list;
+  }
 
   /// Called after any local mutation so the sync layer can push promptly.
   VoidCallback? onLocalChange;

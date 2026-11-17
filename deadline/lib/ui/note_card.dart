@@ -56,15 +56,16 @@ class NoteCard extends StatelessWidget {
                     note.body!.trim(),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        TextStyle(fontSize: 13.5, color: Ink0.muted, height: 1.35),
+                    style: TextStyle(
+                        fontSize: 13.5, color: Ink0.muted, height: 1.35),
                   ),
                 ],
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Text(
-                      DateFormat('d MMM, h:mm a').format(note.updatedAt.toLocal()),
+                      DateFormat('d MMM, h:mm a')
+                          .format(note.updatedAt.toLocal()),
                       style: TextStyle(fontSize: 12, color: Ink0.muted),
                     ),
                     if (note.dirty) ...[

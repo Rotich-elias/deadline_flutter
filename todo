@@ -1,0 +1,89 @@
+Deadlines&Notes — feature backlog
+Status: [x] shipped · [~] partial · [ ] not started
+Last reviewed: 17 November 2026
+
+Suggested build order
+1. App & note locking
+2. Pin/favourite + priority levels (one schema bump)
+3. Checklists & subtasks
+4. Rich text formatting
+5. Multimedia attachments
+6. Templates
+7. Calendar integration
+8. Daily "My Day" view
+9. Collaboration (shared lists, assignment, comments)
+10. AI & smart extraction
+
+1. Note-Taking & Capture
+
+• [~] Quick & Instant Notes: Jot down thoughts, ideas, or meeting minutes on the fly.
+      Notes can be added instantly from the Notes tab; no global quick-capture
+      shortcut or widget yet.
+• [ ] Rich Text Formatting: Apply bold, italics, underlines, highlights, and bullet points.
+      Notes are currently plain text.
+• [ ] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
+• [ ] Web Clipping: Save articles or web pages straight from a browser into your notebook.
+• [ ] Templates: Use pre-made structures for journals, meeting agendas, or project outlines.
+
+2. To-Do List & Task Management
+
+• [ ] Checklists & Subtasks: Break larger projects down into smaller, manageable action steps.
+      Tasks only have a free-form notes field; no subtask rows yet.
+• [ ] Natural Language Parsing: Type a task with a date (e.g., "Finish report Friday 5pm") to auto-schedule it.
+      Dates are picked from the date/time picker.
+• [~] Priority Levels & Labels: Tag tasks by urgency, context, or category (e.g., High, Medium, Low or @work, @home).
+      One free-form tag per task/note plus a tag filter row; no priority levels
+      and no multiple labels.
+• [x] Recurring Tasks: Set habits or chores to repeat daily, weekly, or monthly.
+      Daily/weekly/monthly, with month-end clamping; completing one spawns the
+      next occurrence.
+• [~] Kanban & List Views: Switch between standard lists, calendar layouts, or visual board columns.
+      Urgency-grouped list only; no board or calendar layout.
+
+3. Deadlines, Calendars & Reminders
+
+• [~] Due Dates & Start Dates: Assign strict deadlines and scheduled windows to individual tasks.
+      Due date + time works; start dates are not modelled.
+• [ ] Calendar Integration: Sync tasks and deadlines with external calendars (like Google Calendar, Outlook, or Apple Calendar).
+• [x] Reminders & Push Notifications: Receive time-based or location-based alerts so you never miss a cutoff.
+      Time-based heads-up reminders with the phone's notification tone, custom
+      presets, reboot restore and a daily digest. Location-based alerts are not
+      implemented.
+• [~] Daily Planners / "My Day" Views: Filter down a massive list into a realistic daily focus list.
+      A morning digest notification summarises the day; there is no in-app
+      focus view yet.
+
+4. Organization & Search
+
+• [~] Categories, Notebooks, & Tags: Group related notes and tasks into dedicated spaces or projects.
+      Tags only; no notebooks or categories.
+• [ ] Bi-directional Linking: Connect related notes and tasks to each other.
+• [x] Powerful Search Tools: Instant keyword or tag lookup across all your text, checklists, and attachments.
+      Shipped 17 Nov 2026: case-insensitive search in both tabs across task
+      title/notes/tag and note title/body/tag, combinable with the tag filter.
+      Checklists and attachments will join the search once they exist.
+• [ ] Pinning & Favoriting: Keep critical notes or urgent daily tasks locked to the top of your screen.
+
+5. Collaboration & Sync
+
+• [x] Cross-Device Sync: Seamlessly sync data across mobile, tablet, desktop, and web apps (via cloud services like iCloud or proprietary sync).
+      Optional Google Drive appData folder or a self-hosted Laravel server;
+      newest-updated-wins merge, tombstones and ETag-safe uploads.
+• [ ] Shared Projects & Task Assignment: Collaborate with team members, family, or study groups by sharing lists and delegating tasks.
+• [ ] Comments & History: Leave feedback, track changes, or view activity logs inside shared items.
+      Archive/restore exists, but it is not a user-visible history log.
+
+6. Security & AI Enhancements
+
+• [ ] App & Note Locking: Protect private notes or sensitive checklists with a password, PIN, or biometrics.
+      Secure storage currently holds only the sync token.
+• [ ] AI & Smart Extraction: Automatically transcribe meetings, extract action items from text, or suggest schedule blocks.
+
+Already shipped beyond this list
+• Archive with undo and permanent delete
+• Urgency colour scale and one-week pressure gauge
+• Android home-screen widget for the next deadline
+• Samsung Notes share import and "Paste a note"
+• Daily digest notification
+• Light/dark/system appearance
+• Optional sync settings and privacy policy
