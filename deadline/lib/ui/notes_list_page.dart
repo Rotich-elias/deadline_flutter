@@ -3,16 +3,20 @@ import 'package:flutter/material.dart';
 import '../data/notes_store.dart';
 import '../data/task_store.dart';
 import '../models/note.dart';
+import '../services/app_lock_service.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
+import 'app_lock_settings.dart';
 import 'archive_page.dart';
 import 'note_import_ui.dart';
 import 'note_card.dart';
 import 'note_form_sheet.dart';
+import 'note_lock.dart';
 import 'note_view_page.dart';
 import 'search_field.dart';
 import 'sync_button.dart';
 import 'tag_filter_row.dart';
+import 'template_picker.dart';
 
 class NotesListPage extends StatefulWidget {
   const NotesListPage({
@@ -20,11 +24,13 @@ class NotesListPage extends StatefulWidget {
     required this.store,
     required this.taskStore,
     required this.sync,
+    required this.appLock,
   });
 
   final NotesStore store;
   final TaskStore taskStore;
   final SyncService sync;
+  final AppLockService appLock;
 
   @override
   State<NotesListPage> createState() => _NotesListPageState();
@@ -70,14 +76,36 @@ class _NotesListPageState extends State<NotesListPage> {
     if (n != null) await widget.store.add(n);
   }
 
+  Future<void> _createFromTemplate(BuildContext context) async {
+    final template = await showTemplatePicker(context);
+    if (template == null || !context.mounted) return;
+    final draft = template.apply();
+    final n = await showNoteForm(
+      context,
+      existingTags: widget.store.tags,
+      initialTitle: draft.title,
+      initialBody: draft.body,
+      initialTag: draft.tag,
+    );
+    if (n != null) await widget.store.add(n);
+  }
+
   void _openImportHelp(BuildContext context) => showSamsungImportHelp(context);
 
   void _pasteNote(BuildContext context) =>
       showPasteNoteDialog(context, widget.store);
 
-  void _open(BuildContext context, Note note) {
+  Future<void> _open(BuildContext context, Note note) async {
+    if (note.locked && !await confirmNoteAccess(context, widget.appLock)) {
+      return;
+    }
+    if (!context.mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => NoteViewPage(store: widget.store, noteId: note.id),
+      builder: (_) => NoteViewPage(
+        store: widget.store,
+        noteId: note.id,
+        appLock: widget.appLock,
+      ),
     ));
   }
 
@@ -108,9 +136,11 @@ class _NotesListPageState extends State<NotesListPage> {
                 _Header(
                   store: widget.store,
                   sync: widget.sync,
+                  appLock: widget.appLock,
                   searching: _searching,
                   onToggleSearch: _toggleSearch,
                   onOpenArchive: () => _openArchive(context),
+                  onTemplates: () => _createFromTemplate(context),
                   onImportHelp: () => _openImportHelp(context),
                   onPasteNote: () => _pasteNote(context),
                 ),
@@ -180,17 +210,21 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.store,
     required this.sync,
+    required this.appLock,
     required this.searching,
     required this.onToggleSearch,
     required this.onOpenArchive,
+    required this.onTemplates,
     required this.onImportHelp,
     required this.onPasteNote,
   });
   final NotesStore store;
   final SyncService sync;
+  final AppLockService appLock;
   final bool searching;
   final VoidCallback onToggleSearch;
   final VoidCallback onOpenArchive;
+  final VoidCallback onTemplates;
   final VoidCallback onImportHelp;
   final VoidCallback onPasteNote;
 
@@ -232,22 +266,44 @@ class _Header extends StatelessWidget {
           ),
           SyncButton(sync: sync),
           PopupMenuButton<String>(
-            tooltip: 'Import notes',
+            tooltip: 'Notes menu',
             icon: Icon(Icons.more_vert, color: Ink0.muted),
             onSelected: (value) {
               switch (value) {
                 case 'help':
                   onImportHelp();
+                case 'templates':
+                  onTemplates();
                 case 'paste':
                   onPasteNote();
+                case 'applock':
+                  showAppLockSettings(context, appLock, store);
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
+            itemBuilder: (_) => [
+              const PopupMenuItem(
                 value: 'help',
                 child: Text('Import from Samsung Notes'),
               ),
-              PopupMenuItem(value: 'paste', child: Text('Paste a note')),
+              const PopupMenuItem(
+                value: 'templates',
+                child: Text('Start from a template'),
+              ),
+              const PopupMenuItem(value: 'paste', child: Text('Paste a note')),
+              PopupMenuItem(
+                value: 'applock',
+                child: Row(
+                  children: [
+                    Icon(
+                      appLock.enabled ? Icons.lock : Icons.lock_open_outlined,
+                      size: 17,
+                      color: Ink0.muted,
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('App lock'),
+                  ],
+                ),
+              ),
             ],
           ),
         ],

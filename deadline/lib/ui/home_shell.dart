@@ -2,16 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../data/notes_store.dart';
 import '../data/task_store.dart';
+import '../services/app_lock_service.dart';
 import '../services/note_import.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
+import 'calendar_page.dart';
+import 'my_day_page.dart';
 import 'notes_list_page.dart';
 import 'powered_by_footer.dart';
 import 'task_list_page.dart';
 
-/// Bottom-nav switch between the two top-level sections: deadlines (the
-/// original app) and notes (freeform, no due date). Each tab keeps its own
-/// state across switches via [IndexedStack].
+/// Bottom-nav switch between the four top-level sections: deadlines (the
+/// original app), notes (freeform, no due date), a month calendar over the
+/// deadlines and a My Day focus view. Each tab keeps its own state across
+/// switches via [IndexedStack].
 class HomeShell extends StatefulWidget {
   const HomeShell({
     super.key,
@@ -19,12 +23,14 @@ class HomeShell extends StatefulWidget {
     required this.notesStore,
     required this.sync,
     required this.appTheme,
+    required this.appLock,
   });
 
   final TaskStore store;
   final NotesStore notesStore;
   final SyncService sync;
   final AppTheme appTheme;
+  final AppLockService appLock;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -89,12 +95,16 @@ class _HomeShellState extends State<HomeShell> {
             notesStore: widget.notesStore,
             sync: widget.sync,
             appTheme: widget.appTheme,
+            appLock: widget.appLock,
           ),
           NotesListPage(
             store: widget.notesStore,
             taskStore: widget.store,
             sync: widget.sync,
+            appLock: widget.appLock,
           ),
+          CalendarPage(store: widget.store),
+          MyDayPage(store: widget.store),
         ],
       ),
       bottomNavigationBar: Column(
@@ -125,6 +135,16 @@ class _HomeShellState extends State<HomeShell> {
                 icon: Icon(Icons.sticky_note_2_outlined),
                 selectedIcon: Icon(Icons.sticky_note_2),
                 label: 'Notes',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.calendar_month_outlined),
+                selectedIcon: Icon(Icons.calendar_month),
+                label: 'Calendar',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.today_outlined),
+                selectedIcon: Icon(Icons.today),
+                label: 'My Day',
               ),
             ],
           ),

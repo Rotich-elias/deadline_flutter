@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/task.dart';
+import '../models/task_comment.dart';
 import '../services/home_widget_service.dart';
 import '../services/notifications.dart';
 import '../utils/search.dart';
+import '../utils/urgency.dart';
 import 'local_db.dart';
 
 /// Holds the visible task list and republishes it whenever the data or the
@@ -66,8 +68,32 @@ class TaskStore extends ChangeNotifier {
       list = list.where((t) => t.tag == tagFilter).toList();
     }
     if (query.isNotEmpty) {
-      list = filterByQuery(list, query, (t) => [t.title, t.notes, t.tag]);
+      list = filterByQuery(
+          list,
+          query,
+          (t) => [
+                t.title,
+                t.notes,
+                t.tag,
+                ...t.checklist.map((item) => item.title),
+              ]);
     }
+
+    // The database already puts pinned first and soonest first. Reorder here
+    // so urgency stays the primary grouping and priority is the tie-breaker
+    // inside each bucket — a high-priority task due next week should not
+    // jump ahead of something overdue today.
+    list.sort((a, b) {
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+      if (a.done != b.done) return a.done ? 1 : -1;
+      final bucketA = urgencyOf(a).index;
+      final bucketB = urgencyOf(b).index;
+      if (bucketA != bucketB) return bucketA.compareTo(bucketB);
+      if (a.priority.index != b.priority.index) {
+        return b.priority.index.compareTo(a.priority.index);
+      }
+      return a.dueAt.compareTo(b.dueAt);
+    });
     return list;
   }
 
@@ -134,6 +160,60 @@ class TaskStore extends ChangeNotifier {
     await load();
     onLocalChange?.call();
   }
+
+  /// Pins or unpins a task. Pin is synced data, so this goes through the normal
+  /// save path and marks the row dirty.
+  Future<void> setPinned(Task t, bool pinned) async {
+    if (t.pinned == pinned) return;
+    await save(t.copyWith(pinned: pinned));
+  }
+
+  Future<void> setAssignee(Task t, String? value) {
+    final trimmed = value?.trim();
+    final next = trimmed == null || trimmed.isEmpty ? null : trimmed;
+    if (next == t.assignedTo) return Future.value();
+    return save(t.copyWith(clearAssignedTo: next == null, assignedTo: next));
+  }
+
+  Future<void> addComment(Task t, String body, {String author = 'Me'}) {
+    final comment = TaskComment.create(author: author, body: body);
+    if (comment.body.isEmpty) return Future.value();
+    return save(t.copyWith(comments: [...t.comments, comment]));
+  }
+
+  Future<void> removeComment(Task t, String id) => save(t.copyWith(
+        comments: [
+          for (final comment in t.comments)
+            if (comment.id != id) comment,
+        ],
+      ));
+
+  /// Checklist edits reuse the normal save path so they sync like any other
+  /// task change. Each mutation replaces the whole list on the copy.
+  Future<void> saveChecklist(Task t, List<ChecklistItem> checklist) =>
+      save(t.copyWith(checklist: checklist));
+
+  Future<void> addChecklistItem(Task t, String title) {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) return Future.value();
+    return saveChecklist(t, [...t.checklist, ChecklistItem.create(trimmed)]);
+  }
+
+  Future<void> toggleChecklistItem(Task t, String itemId) => saveChecklist(
+        t,
+        [
+          for (final item in t.checklist)
+            item.id == itemId ? item.copyWith(done: !item.done) : item,
+        ],
+      );
+
+  Future<void> removeChecklistItem(Task t, String itemId) => saveChecklist(
+        t,
+        [
+          for (final item in t.checklist)
+            if (item.id != itemId) item
+        ],
+      );
 
   /// Marking a repeating task done also spawns its next occurrence.
   Future<void> toggleDone(Task t) async {

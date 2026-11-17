@@ -7,7 +7,9 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../data/local_db.dart';
-import '../models/task.dart';
+// Our Task.Priority would collide with flutter_local_notifications' Priority,
+// which is the one this file uses for Android notification importance.
+import '../models/task.dart' hide Priority;
 import 'home_widget_service.dart';
 
 const _markDoneAction = 'mark_done';

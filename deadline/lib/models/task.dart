@@ -1,9 +1,65 @@
+import 'dart:convert';
+
 import 'package:uuid/uuid.dart';
+
+import 'task_comment.dart';
 
 const _uuid = Uuid();
 
+/// One line of a task's checklist. Items are ordinary synced data: the id is
+/// stable so a toggle on one device updates the same line on another, and the
+/// done state resets when a repeating task spawns its next occurrence.
+class ChecklistItem {
+  const ChecklistItem({
+    required this.id,
+    required this.title,
+    this.done = false,
+  });
+
+  factory ChecklistItem.create(String title) =>
+      ChecklistItem(id: _uuid.v4(), title: title);
+
+  final String id;
+  final String title;
+  final bool done;
+
+  ChecklistItem copyWith({String? title, bool? done}) => ChecklistItem(
+        id: id,
+        title: title ?? this.title,
+        done: done ?? this.done,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'done': done,
+      };
+
+  factory ChecklistItem.fromJson(Map<String, dynamic> j) => ChecklistItem(
+        id: (j['id'] ?? '').toString(),
+        title: (j['title'] ?? '').toString(),
+        done: j['done'] == true || j['done'] == 1,
+      );
+
+  @override
+  String toString() => '$title${done ? ' ✓' : ''}';
+}
+
 /// How a task recreates itself after it's marked done.
 enum Repeat { none, daily, weekly, monthly }
+
+/// How important a task is, independently of how soon it is due. Urgency is
+/// calculated from the deadline; priority is set by the user and is synced.
+enum Priority { none, low, medium, high }
+
+extension PriorityLabel on Priority {
+  String get label => switch (this) {
+        Priority.none => 'None',
+        Priority.low => 'Low',
+        Priority.medium => 'Medium',
+        Priority.high => 'High',
+      };
+}
 
 extension RepeatRule on Repeat {
   String get label => switch (this) {
@@ -56,6 +112,11 @@ class Task {
     this.dirty = true,
     this.repeat = Repeat.none,
     this.archivedAt,
+    this.pinned = false,
+    this.priority = Priority.none,
+    this.checklist = const [],
+    this.assignedTo,
+    this.comments = const [],
     List<int>? reminderMinutes,
     DateTime? updatedAt,
   })  : reminderMinutes = reminderMinutes ?? defaultReminderMinutes,
@@ -68,6 +129,11 @@ class Task {
     String? tag,
     Repeat repeat = Repeat.none,
     List<int>? reminderMinutes,
+    bool pinned = false,
+    Priority priority = Priority.none,
+    List<ChecklistItem>? checklist,
+    String? assignedTo,
+    List<TaskComment>? comments,
   }) {
     return Task(
       id: _uuid.v4(),
@@ -77,6 +143,11 @@ class Task {
       repeat: repeat,
       reminderMinutes: reminderMinutes,
       dueAt: dueAtLocal.toUtc(),
+      pinned: pinned,
+      priority: priority,
+      checklist: checklist ?? const [],
+      assignedTo: assignedTo,
+      comments: comments ?? const [],
     );
   }
 
@@ -113,6 +184,28 @@ class Task {
   /// True when this copy has local changes the server has not seen.
   bool dirty;
 
+  /// Pinned tasks sit in their own group at the top of the list. Unlike the
+  /// lock flag on notes this is ordinary data, so it travels with sync.
+  bool pinned;
+
+  /// User-set importance, separate from the time-based urgency colour.
+  Priority priority;
+
+  /// Ordered subtasks. Stored as JSON on the task row and sent as a structured
+  /// list in sync payloads; it never needs its own endpoint or table.
+  List<ChecklistItem> checklist;
+
+  /// Free-text collaborator label (an email is recommended). Stored on the
+  /// task and synced like other ordinary task data; no account lookup in v1.
+  String? assignedTo;
+
+  /// Discussion on this task. New occurrences start empty, like checklists.
+  List<TaskComment> comments;
+
+  int get checklistDone => checklist.where((i) => i.done).length;
+  bool get hasChecklist => checklist.isNotEmpty;
+  bool get hasComments => comments.isNotEmpty;
+
   DateTime get dueLocal => dueAt.toLocal();
   Duration get remaining => dueAt.difference(DateTime.now().toUtc());
   bool get isOverdue => !done && remaining.isNegative;
@@ -128,6 +221,12 @@ class Task {
       dueAt: repeat.next(dueAt),
       repeat: repeat,
       reminderMinutes: reminderMinutes,
+      pinned: pinned,
+      priority: priority,
+      assignedTo: assignedTo,
+      // A fresh occurrence starts with every box unchecked and no discussion.
+      checklist: [for (final item in checklist) item.copyWith(done: false)],
+      comments: const [],
     );
   }
 
@@ -144,6 +243,12 @@ class Task {
     DateTime? archivedAt,
     bool clearArchivedAt = false,
     List<int>? reminderMinutes,
+    bool? pinned,
+    Priority? priority,
+    List<ChecklistItem>? checklist,
+    bool clearAssignedTo = false,
+    String? assignedTo,
+    List<TaskComment>? comments,
     DateTime? updatedAt,
   }) {
     return Task(
@@ -158,6 +263,11 @@ class Task {
       repeat: repeat ?? this.repeat,
       archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
       reminderMinutes: reminderMinutes ?? this.reminderMinutes,
+      pinned: pinned ?? this.pinned,
+      priority: priority ?? this.priority,
+      checklist: checklist ?? this.checklist,
+      assignedTo: clearAssignedTo ? null : (assignedTo ?? this.assignedTo),
+      comments: comments ?? this.comments,
       updatedAt: updatedAt ?? DateTime.now().toUtc(),
     );
   }
@@ -186,8 +296,77 @@ class Task {
         : Repeat.none;
   }
 
+  static Priority _parsePriority(Object? raw) {
+    final index = raw is int ? raw : (raw is num ? raw.toInt() : 0);
+    return index >= 0 && index < Priority.values.length
+        ? Priority.values[index]
+        : Priority.none;
+  }
+
+  static bool _asBool(Object? raw) => raw == true || raw == 1;
+
   static DateTime? _parseArchivedAt(Object? raw) =>
       raw is int ? DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true) : null;
+
+  /// Accepts both the JSON text stored in the local `checklist` column and the
+  /// structured list received from sync, and survives corrupt/legacy payloads.
+  static List<ChecklistItem> _parseChecklist(Object? raw) {
+    Iterable<dynamic> values;
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        values = jsonDecode(raw) as Iterable<dynamic>;
+      } catch (_) {
+        return const [];
+      }
+    } else if (raw is Iterable) {
+      values = raw;
+    } else {
+      return const [];
+    }
+
+    final items = <ChecklistItem>[];
+    for (final value in values) {
+      final map = value is Map<String, dynamic>
+          ? value
+          : value is Map
+              ? Map<String, dynamic>.from(value)
+              : null;
+      if (map == null) continue;
+      final item = ChecklistItem.fromJson(map);
+      if (item.title.trim().isNotEmpty) items.add(item);
+    }
+    return List.unmodifiable(items);
+  }
+
+  /// Similar to [_parseChecklist]: accepts both the JSON text in the local
+  /// column and the structured list from sync, ignoring corrupt entries.
+  static List<TaskComment> _parseComments(Object? raw) {
+    Iterable<dynamic> values;
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        values = jsonDecode(raw) as Iterable<dynamic>;
+      } catch (_) {
+        return const [];
+      }
+    } else if (raw is Iterable) {
+      values = raw;
+    } else {
+      return const [];
+    }
+
+    final result = <TaskComment>[];
+    for (final value in values) {
+      final map = value is Map<String, dynamic>
+          ? value
+          : value is Map
+              ? Map<String, dynamic>.from(value)
+              : null;
+      if (map == null) continue;
+      final comment = TaskComment.fromJson(map);
+      if (comment.body.trim().isNotEmpty) result.add(comment);
+    }
+    return List.unmodifiable(result);
+  }
 
   Map<String, Object?> toRow() => {
         'id': id,
@@ -202,6 +381,11 @@ class Task {
         'repeat': repeat.index,
         'reminders': reminderMinutes.join(','),
         'archived_at': archivedAt?.millisecondsSinceEpoch,
+        'pinned': pinned ? 1 : 0,
+        'priority': priority.index,
+        'checklist': jsonEncode(checklist.map((i) => i.toJson()).toList()),
+        'assigned_to': assignedTo,
+        'comments': jsonEncode(comments.map((c) => c.toJson()).toList()),
       };
 
   factory Task.fromRow(Map<String, Object?> r) => Task(
@@ -219,6 +403,11 @@ class Task {
         repeat: _parseRepeat(r['repeat']),
         archivedAt: _parseArchivedAt(r['archived_at']),
         reminderMinutes: _parseReminders(r['reminders']),
+        pinned: _asBool(r['pinned']),
+        priority: _parsePriority(r['priority']),
+        checklist: _parseChecklist(r['checklist']),
+        assignedTo: r['assigned_to'] as String?,
+        comments: _parseComments(r['comments']),
       );
 
   /// [archivedAt] is intentionally absent: the archive is device-local, so a
@@ -234,6 +423,11 @@ class Task {
         'deleted': deleted,
         'updated_at': updatedAt.toIso8601String(),
         'repeat': repeat.index,
+        'pinned': pinned,
+        'priority': priority.index,
+        'checklist': [for (final item in checklist) item.toJson()],
+        'assigned_to': assignedTo,
+        'comments': [for (final c in comments) c.toJson()],
       };
 
   factory Task.fromJson(Map<String, dynamic> j) {
@@ -251,6 +445,11 @@ class Task {
       // A delete made on another device should be recoverable here too.
       archivedAt: deleted ? updatedAt : null,
       repeat: _parseRepeat(j['repeat']),
+      pinned: _asBool(j['pinned']),
+      priority: _parsePriority(j['priority']),
+      checklist: _parseChecklist(j['checklist']),
+      assignedTo: j['assigned_to'] as String?,
+      comments: _parseComments(j['comments']),
       dirty: false,
     );
   }

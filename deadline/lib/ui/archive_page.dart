@@ -30,10 +30,14 @@ class ArchivePage extends StatelessWidget {
   }
 
   Future<void> _restoreNote(BuildContext context, Note note) async {
+    final title = _noteTitle(note);
     await notesStore.restore(note);
     if (!context.mounted) return;
-    _say(context, 'Restored "${note.title}"');
+    _say(context, 'Restored "$title"');
   }
+
+  static String _noteTitle(Note note) =>
+      note.locked ? 'Locked note' : note.title;
 
   Future<void> _purgeTask(BuildContext context, Task task) async {
     if (!await _confirmDelete(context, task.title)) return;
@@ -43,10 +47,10 @@ class ArchivePage extends StatelessWidget {
   }
 
   Future<void> _purgeNote(BuildContext context, Note note) async {
-    if (!await _confirmDelete(context, note.title)) return;
+    if (!await _confirmDelete(context, _noteTitle(note))) return;
     await notesStore.purge(note);
     if (!context.mounted) return;
-    _say(context, 'Deleted "${note.title}" forever');
+    _say(context, 'Deleted "${_noteTitle(note)}" forever');
   }
 
   Future<void> _empty(BuildContext context) async {
@@ -246,9 +250,10 @@ class _NoteArchive extends StatelessWidget {
       children: [
         for (final n in notes)
           _ArchiveCard(
-            title: n.title,
-            tag: n.tag,
-            subtitle: n.body,
+            title: n.locked ? 'Locked note' : n.title,
+            tag: n.locked ? null : n.tag,
+            subtitle: n.locked ? null : n.plainBody,
+            locked: n.locked,
             archivedAt: n.archivedAt!,
             onRestore: () => onRestore(n),
             onDeleteForever: () => onDeleteForever(n),
@@ -266,6 +271,7 @@ class _ArchiveCard extends StatelessWidget {
     required this.onDeleteForever,
     this.tag,
     this.subtitle,
+    this.locked = false,
   });
 
   final String title;
@@ -274,6 +280,7 @@ class _ArchiveCard extends StatelessWidget {
   final DateTime archivedAt;
   final VoidCallback onRestore;
   final VoidCallback onDeleteForever;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -311,14 +318,29 @@ class _ArchiveCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                       ],
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          height: 1.25,
-                          fontWeight: FontWeight.w600,
-                          color: Ink0.text,
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (locked) ...[
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Icon(Icons.lock_outline,
+                                  size: 15, color: Ink0.muted),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                                color: Ink0.text,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       if (trimmedSubtitle.isNotEmpty) ...[
                         const SizedBox(height: 4),

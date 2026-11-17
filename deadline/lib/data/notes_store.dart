@@ -1,15 +1,19 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/attachment.dart';
 import '../models/note.dart';
+import '../services/attachments.dart';
 import '../utils/search.dart';
 import 'local_db.dart';
 
 /// Holds the visible note list. Simpler than TaskStore — nothing here is a
 /// function of "now", so there's no ticker.
 class NotesStore extends ChangeNotifier {
-  NotesStore(this._db);
+  NotesStore(this._db, {AttachmentService? attachments})
+      : attachments = attachments ?? AttachmentService();
 
   final LocalDb _db;
+  final AttachmentService attachments;
 
   List<Note> _notes = [];
   List<Note> get notes => List.unmodifiable(_notes);
@@ -42,7 +46,18 @@ class NotesStore extends ChangeNotifier {
       list = list.where((n) => n.tag == tagFilter).toList();
     }
     if (query.isNotEmpty) {
-      list = filterByQuery(list, query, (n) => [n.title, n.body, n.tag]);
+      // A locked note's title, body and tag must not leak through a search
+      // result. It reappears, still masked, once the search is cleared.
+      list = list.where((n) => !n.locked).toList();
+      list = filterByQuery(
+          list,
+          query,
+          (n) => [
+                n.title,
+                n.plainBody,
+                n.tag,
+                ...n.attachments.map((a) => a.fileName),
+              ]);
     }
     return list;
   }
@@ -70,6 +85,22 @@ class NotesStore extends ChangeNotifier {
     onLocalChange?.call();
   }
 
+  /// Add a file that the UI has already copied into app storage. Attaching it
+  /// marks the note dirty so its metadata travels with the next note sync.
+  Future<void> addAttachment(Note n, NoteAttachment attachment) =>
+      save(n.copyWith(attachments: [...n.attachments, attachment]));
+
+  /// Remove one attachment and delete its local bytes. The note stays saved
+  /// even if the file is already missing (e.g. it came from another device).
+  Future<void> removeAttachment(Note n, String attachmentId) async {
+    final target = n.attachments.where((a) => a.id == attachmentId).toList();
+    if (target.isEmpty) return;
+    await attachments.deleteAll(target);
+    await save(n.copyWith(
+        attachments:
+            n.attachments.where((a) => a.id != attachmentId).toList()));
+  }
+
   /// Archive a note so it leaves the list but stays recoverable.
   Future<void> remove(Note n) async {
     await _db.upsertNote(n.copyWith(
@@ -88,6 +119,7 @@ class NotesStore extends ChangeNotifier {
 
   /// Delete one archived note for good, leaving a tombstone for sync.
   Future<void> purge(Note n) async {
+    await attachments.deleteAll(n.attachments);
     await _db.upsertNote(n.copyWith(deleted: true, clearArchivedAt: true));
     await load();
     onLocalChange?.call();
@@ -95,8 +127,31 @@ class NotesStore extends ChangeNotifier {
 
   Future<void> emptyArchive() async {
     if (_archived.isEmpty) return;
+    for (final note in _archived) {
+      await attachments.deleteAll(note.attachments);
+    }
     await _db.emptyNoteArchive();
     await load();
     onLocalChange?.call();
+  }
+
+  /// Pins or unpins a note. Unlike [setLocked] this is synced data, so it goes
+  /// through the normal save path and marks the row dirty.
+  Future<void> setPinned(Note n, bool pinned) async {
+    if (n.pinned == pinned) return;
+    await save(n.copyWith(pinned: pinned));
+  }
+
+  /// Locks or unlocks a note. Device-local and sync-neutral, so this does not
+  /// notify [onLocalChange].
+  Future<void> setLocked(Note n, bool locked) async {
+    await _db.setNoteLocked(n.id, locked);
+    await load();
+  }
+
+  /// Clears every note lock, called when app lock is turned off.
+  Future<void> clearAllLocks() async {
+    await _db.clearNoteLocks();
+    await load();
   }
 }

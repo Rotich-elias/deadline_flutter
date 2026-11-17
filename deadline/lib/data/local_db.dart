@@ -14,7 +14,7 @@ class LocalDb {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'deadline.db'),
-      version: 4,
+      version: 9,
       onCreate: (d, _) async {
         await d.execute('''
           CREATE TABLE tasks (
@@ -29,12 +29,19 @@ class LocalDb {
             dirty       INTEGER NOT NULL DEFAULT 1,
             repeat      INTEGER NOT NULL DEFAULT 0,
             reminders   TEXT,
-            archived_at INTEGER
+            archived_at INTEGER,
+            pinned      INTEGER NOT NULL DEFAULT 0,
+            priority    INTEGER NOT NULL DEFAULT 0,
+            checklist   TEXT NOT NULL DEFAULT '[]',
+            assigned_to TEXT,
+            comments    TEXT NOT NULL DEFAULT '[]'
           )
         ''');
         await d.execute('CREATE INDEX idx_tasks_due ON tasks(due_at)');
         await d.execute('CREATE INDEX idx_tasks_dirty ON tasks(dirty)');
         await d.execute('CREATE INDEX idx_tasks_tag ON tasks(tag)');
+        await d.execute(
+            'CREATE INDEX idx_tasks_pinned ON tasks(pinned, done, due_at)');
         await d.execute(
             'CREATE INDEX idx_tasks_archived ON tasks(deleted, archived_at)');
         await _createNotesTable(d);
@@ -60,6 +67,48 @@ class LocalDb {
           await d.execute(
               'CREATE INDEX idx_notes_archived ON notes(deleted, archived_at)');
         }
+        if (oldVersion < 5) {
+          // Per-note lock. Device-local: never sent to the server.
+          await d.execute(
+              'ALTER TABLE notes ADD COLUMN locked INTEGER NOT NULL DEFAULT 0');
+        }
+        if (oldVersion < 6) {
+          // Pinning for both kinds, plus task priority. All three are
+          // ordinary synced data, so existing rows start unpinned/unprioritised.
+          await d.execute(
+              'ALTER TABLE tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
+          await d.execute(
+              'ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
+          await d.execute(
+              'CREATE INDEX idx_tasks_pinned ON tasks(pinned, done, due_at)');
+          if (oldVersion >= 3) {
+            // Databases older than v3 get notes via _createNotesTable above,
+            // which already includes the pinned column and its index.
+            await d.execute(
+                'ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
+            await d.execute(
+                'CREATE INDEX idx_notes_pinned ON notes(pinned, updated_at)');
+          }
+        }
+        if (oldVersion < 7) {
+          // Checklist items live inside the task row as JSON. Existing tasks
+          // simply start with an empty list.
+          await d.execute(
+              "ALTER TABLE tasks ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]'");
+        }
+        if (oldVersion < 8) {
+          // Attachment metadata lives inside the note row as JSON, same as
+          // task checklists. The files themselves are in app storage.
+          await d.execute(
+              "ALTER TABLE notes ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'");
+        }
+        if (oldVersion < 9) {
+          // Assignee and discussion live inside the task row as JSON/text,
+          // just like checklists. Existing tasks start unassigned and silent.
+          await d.execute('ALTER TABLE tasks ADD COLUMN assigned_to TEXT');
+          await d.execute(
+              "ALTER TABLE tasks ADD COLUMN comments TEXT NOT NULL DEFAULT '[]'");
+        }
       },
     );
   }
@@ -74,22 +123,28 @@ class LocalDb {
         updated_at  INTEGER NOT NULL,
         deleted     INTEGER NOT NULL DEFAULT 0,
         dirty       INTEGER NOT NULL DEFAULT 1,
-        archived_at INTEGER
+        archived_at INTEGER,
+        locked      INTEGER NOT NULL DEFAULT 0,
+        pinned      INTEGER NOT NULL DEFAULT 0,
+        attachments TEXT NOT NULL DEFAULT '[]'
       )
     ''');
     await d.execute('CREATE INDEX idx_notes_dirty ON notes(dirty)');
     await d.execute('CREATE INDEX idx_notes_tag ON notes(tag)');
     await d.execute('CREATE INDEX idx_notes_updated ON notes(updated_at)');
+    await d
+        .execute('CREATE INDEX idx_notes_pinned ON notes(pinned, updated_at)');
     await d.execute(
         'CREATE INDEX idx_notes_archived ON notes(deleted, archived_at)');
   }
 
-  /// Live tasks, soonest deadline first. Completed ones sink to the bottom.
+  /// Live tasks, pinned first, then soonest deadline. Completed ones sink to
+  /// the bottom. [TaskStore.visible] refines this further by priority.
   Future<List<Task>> all() async {
     final rows = await db.query(
       'tasks',
       where: 'deleted = 0',
-      orderBy: 'done ASC, due_at ASC',
+      orderBy: 'pinned DESC, done ASC, due_at ASC',
     );
     return rows.map(Task.fromRow).toList();
   }
@@ -118,11 +173,20 @@ class LocalDb {
     );
   }
 
-  /// Tombstones the server has acknowledged no longer need to be kept.
-  /// Archived rows are excluded: they stay until permanently deleted.
+  /// Called after every sync. Purged rows are kept locally as hidden
+  /// tombstones (deleted, not archived, clean) instead of being hard-deleted.
+  ///
+  /// Hard-deleting them used to let the next sync pull re-create them as
+  /// *archived* rows: a remote deleted row carries no "permanently deleted"
+  /// marker, so [Task.fromJson] treats it as a recoverable delete and gives it
+  /// an archive timestamp. Keeping the local tombstone means the pull finds a
+  /// row with the same updatedAt and leaves it alone, permanently.
+  ///
+  /// Tombstones are invisible to both the live list (`deleted = 0`) and the
+  /// archive (`archived_at IS NOT NULL`), so retaining them costs a few bytes
+  /// per deleted item and nothing in the UI.
   Future<void> purgeSyncedDeletes() async {
-    await db.delete('tasks',
-        where: 'deleted = 1 AND dirty = 0 AND archived_at IS NULL');
+    // Intentionally a no-op — see above.
   }
 
   /// Deleted tasks kept in the archive, most recently deleted first.
@@ -168,7 +232,7 @@ class LocalDb {
     final rows = await db.query(
       'notes',
       where: 'deleted = 0',
-      orderBy: 'updated_at DESC',
+      orderBy: 'pinned DESC, updated_at DESC',
     );
     return rows.map(Note.fromRow).toList();
   }
@@ -197,9 +261,10 @@ class LocalDb {
     );
   }
 
+  /// Same as [purgeSyncedDeletes], for notes: a purged note stays as a hidden
+  /// tombstone so a later sync cannot resurrect it into the archive.
   Future<void> purgeSyncedNoteDeletes() async {
-    await db.delete('notes',
-        where: 'deleted = 1 AND dirty = 0 AND archived_at IS NULL');
+    // Intentionally a no-op — see purgeSyncedDeletes.
   }
 
   /// Deleted notes kept in the archive, most recently deleted first.
@@ -226,12 +291,29 @@ class LocalDb {
     );
   }
 
+  /// Updates only the device-local lock flag, leaving the sync state and
+  /// `updated_at` untouched so locking a note does not reorder or re-upload it.
+  Future<void> setNoteLocked(String id, bool locked) async {
+    await db.update(
+      'notes',
+      {'locked': locked ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Used when app lock is turned off: a note lock without the app PIN would
+  /// be impossible to open.
+  Future<void> clearNoteLocks() async {
+    await db.update('notes', {'locked': 0}, where: 'locked = 1');
+  }
+
   Future<List<String>> distinctNoteTags() async {
     final rows = await db.query(
       'notes',
       distinct: true,
       columns: ['tag'],
-      where: "deleted = 0 AND tag IS NOT NULL AND tag != ''",
+      where: "deleted = 0 AND locked = 0 AND tag IS NOT NULL AND tag != ''",
       orderBy: 'tag COLLATE NOCASE ASC',
     );
     return rows.map((r) => r['tag'] as String).toList();

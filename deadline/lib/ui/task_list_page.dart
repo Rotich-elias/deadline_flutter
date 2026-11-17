@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../data/notes_store.dart';
 import '../data/task_store.dart';
 import '../models/task.dart';
+import '../services/app_lock_service.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import '../utils/urgency.dart';
+import 'app_lock_settings.dart';
 import 'archive_page.dart';
 import 'privacy_page.dart';
 import 'search_field.dart';
@@ -22,12 +24,14 @@ class TaskListPage extends StatefulWidget {
     required this.notesStore,
     required this.sync,
     required this.appTheme,
+    required this.appLock,
   });
 
   final TaskStore store;
   final NotesStore notesStore;
   final SyncService sync;
   final AppTheme appTheme;
+  final AppLockService appLock;
 
   @override
   State<TaskListPage> createState() => _TaskListPageState();
@@ -68,14 +72,22 @@ class _TaskListPageState extends State<TaskListPage> {
     ));
   }
 
+  /// Collaboration metadata travels through the Laravel sync endpoint. Offline
+  /// and Drive users must not see controls that would silently never sync.
+  bool get _collaborationEnabled => widget.sync.method == SyncMethod.server;
+
   Future<void> _create(BuildContext context) async {
-    final t = await showTaskForm(context, existingTags: widget.store.tags);
+    final t = await showTaskForm(context,
+        existingTags: widget.store.tags,
+        collaborationEnabled: _collaborationEnabled);
     if (t != null) await widget.store.add(t);
   }
 
   Future<void> _edit(BuildContext context, Task task) async {
     final t = await showTaskForm(context,
-        existing: task, existingTags: widget.store.tags);
+        existing: task,
+        existingTags: widget.store.tags,
+        collaborationEnabled: _collaborationEnabled);
     if (t != null) await widget.store.save(t);
   }
 
@@ -107,6 +119,8 @@ class _TaskListPageState extends State<TaskListPage> {
                   store: widget.store,
                   sync: widget.sync,
                   appTheme: widget.appTheme,
+                  appLock: widget.appLock,
+                  notesStore: widget.notesStore,
                   searching: _searching,
                   onToggleSearch: _toggleSearch,
                   onOpenArchive: () => _openArchive(context),
@@ -146,20 +160,35 @@ class _TaskListPageState extends State<TaskListPage> {
   }
 
   Widget _buildList(BuildContext context, List<Task> tasks) {
-    // Tasks arrive sorted by due date, so a group header is needed only where
-    // the urgency bucket changes.
+    // Pinned tasks lead with their own group; the rest keep the urgency
+    // buckets. A header appears only where the group changes.
     final items = <Widget>[];
+    final pinnedCount = tasks.where((t) => t.pinned).length;
     Urgency? current;
+    var inPinned = false;
 
     for (final t in tasks) {
-      final u = urgencyOf(t);
-      if (u != current) {
-        current = u;
-        items.add(_GroupHeader(
-          label: u.label,
-          color: u.color,
-          count: tasks.where((x) => urgencyOf(x) == u).length,
-        ));
+      if (t.pinned != inPinned) {
+        inPinned = t.pinned;
+        current = null;
+        if (inPinned) {
+          items.add(_GroupHeader(
+            label: 'Pinned',
+            color: const Color(0xFFE4C441),
+            count: pinnedCount,
+          ));
+        }
+      }
+      if (!inPinned) {
+        final u = urgencyOf(t);
+        if (u != current) {
+          current = u;
+          items.add(_GroupHeader(
+            label: u.label,
+            color: u.color,
+            count: tasks.where((x) => !x.pinned && urgencyOf(x) == u).length,
+          ));
+        }
       }
       items.add(Dismissible(
         key: ValueKey(t.id),
@@ -179,6 +208,8 @@ class _TaskListPageState extends State<TaskListPage> {
           task: t,
           onToggle: () => widget.store.toggleDone(t),
           onEdit: () => _edit(context, t),
+          onPin: () => widget.store.setPinned(t, !t.pinned),
+          showCollaboration: _collaborationEnabled,
         ),
       ));
     }
@@ -196,6 +227,8 @@ class _Header extends StatelessWidget {
     required this.store,
     required this.sync,
     required this.appTheme,
+    required this.appLock,
+    required this.notesStore,
     required this.searching,
     required this.onToggleSearch,
     required this.onOpenArchive,
@@ -203,6 +236,8 @@ class _Header extends StatelessWidget {
   final TaskStore store;
   final SyncService sync;
   final AppTheme appTheme;
+  final AppLockService appLock;
+  final NotesStore notesStore;
   final bool searching;
   final VoidCallback onToggleSearch;
   final VoidCallback onOpenArchive;
@@ -272,6 +307,8 @@ class _Header extends StatelessWidget {
                 showDigestSettings(context, store);
               } else if (v == 'appearance') {
                 showAppearanceSettings(context, appTheme);
+              } else if (v == 'applock') {
+                showAppLockSettings(context, appLock, notesStore);
               } else if (v == 'privacy') {
                 Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const PrivacyPolicyPage(),
@@ -289,6 +326,20 @@ class _Header extends StatelessWidget {
               const PopupMenuItem(value: 'sync', child: Text('Sync settings')),
               const PopupMenuItem(
                   value: 'appearance', child: Text('Appearance')),
+              PopupMenuItem(
+                value: 'applock',
+                child: Row(
+                  children: [
+                    Icon(
+                      appLock.enabled ? Icons.lock : Icons.lock_open_outlined,
+                      size: 17,
+                      color: Ink0.muted,
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('App lock'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(
                   value: 'privacy', child: Text('Privacy policy')),
             ],

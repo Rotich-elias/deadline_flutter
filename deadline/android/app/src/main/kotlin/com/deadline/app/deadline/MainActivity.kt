@@ -6,12 +6,14 @@ import android.os.Build
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Log
-import io.flutter.embedding.android.FlutterActivity
+import android.view.WindowManager
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val channelName = "deadline/notifications"
+    private val securityChannelName = "deadline/security"
     private var methodChannel: MethodChannel? = null
 
     /**
@@ -43,6 +45,24 @@ class MainActivity : FlutterActivity() {
         }
 
         collectShared(intent)
+
+        // Hides the app's contents in the recent-apps thumbnail while app lock
+        // is on. Also blocks screenshots, which is what a locked app should do.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, securityChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setSecureScreen" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        if (enabled) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun onNewIntent(intent: Intent) {

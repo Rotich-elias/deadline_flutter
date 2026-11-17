@@ -17,7 +17,7 @@ class Note extends Model
 
     protected $fillable = [
         'id', 'user_id', 'title', 'body', 'tag',
-        'deleted', 'updated_at', 'created_at', 'synced_at',
+        'deleted', 'pinned', 'attachments', 'updated_at', 'created_at', 'synced_at',
     ];
 
     protected $casts = [
@@ -25,6 +25,8 @@ class Note extends Model
         'created_at' => 'datetime',
         'synced_at' => 'datetime',
         'deleted' => 'boolean',
+        'pinned' => 'boolean',
+        'attachments' => 'array',
     ];
 
     public function toSyncArray(): array
@@ -35,6 +37,8 @@ class Note extends Model
             'body' => $this->body,
             'tag' => $this->tag,
             'deleted' => $this->deleted,
+            'pinned' => $this->pinned,
+            'attachments' => $this->attachments ?? [],
             'updated_at' => $this->updated_at->toIso8601String(),
         ];
     }

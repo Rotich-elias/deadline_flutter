@@ -280,6 +280,8 @@ class SyncService extends ChangeNotifier {
         updatedAtOf: (n) => n.updatedAt,
         onUpsertedRemote: null,
         since: lastSyncedAt,
+        merge: (remote, local) =>
+            remote.withLocalLockFrom(local).withLocalAttachmentsFrom(local),
       );
 
       lastSyncedAt = serverTime;
@@ -313,6 +315,7 @@ class SyncService extends ChangeNotifier {
     required DateTime Function(T) updatedAtOf,
     required Future<void> Function(T)? onUpsertedRemote,
     required DateTime? since,
+    T Function(T remote, T? local)? merge,
   }) async {
     final outgoing = await dirty();
     final res = await backend.sync(changes: outgoing, since: since);
@@ -326,12 +329,13 @@ class SyncService extends ChangeNotifier {
       }
     }
 
-    // Newest copy wins.
+    // Newest copy wins, except for fields that are deliberately device-local.
     for (final remote in res.items) {
       final local = await find(idOf(remote));
       if (local == null || updatedAtOf(remote).isAfter(updatedAtOf(local))) {
-        await upsert(remote);
-        if (onUpsertedRemote != null) await onUpsertedRemote(remote);
+        final next = merge == null ? remote : merge(remote, local);
+        await upsert(next);
+        if (onUpsertedRemote != null) await onUpsertedRemote(next);
       }
     }
 

@@ -6,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'data/local_db.dart';
 import 'data/notes_store.dart';
 import 'data/task_store.dart';
+import 'services/app_lock_service.dart';
 import 'services/notifications.dart';
 import 'sync/sync_service.dart';
 import 'theme.dart';
+import 'ui/app_lock_gate.dart';
 import 'ui/home_shell.dart';
 import 'ui/loading_page.dart';
 
@@ -33,12 +35,14 @@ class _AppDeps {
     required this.notesStore,
     required this.sync,
     required this.appTheme,
+    required this.appLock,
   });
 
   final TaskStore store;
   final NotesStore notesStore;
   final SyncService sync;
   final AppTheme appTheme;
+  final AppLockService appLock;
 }
 
 class DeadlineBootstrap extends StatefulWidget {
@@ -71,11 +75,18 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       final notesStore = NotesStore(db);
       final sync = SyncService(db, store, notesStore);
       final appTheme = AppTheme();
+      final appLock = AppLockService();
       Notifications.instance.onExternalChange = () => unawaited(store.load());
 
       await store.loadDigestSettings();
+      await appLock.load();
       await store.load();
       await notesStore.load();
+      // Secure storage can be cleared independently of the database (device
+      // transfer, "clear data" on some ROMs). A note lock without an app PIN
+      // could never be opened again, so release any orphans. The update is a
+      // no-op when nothing is locked.
+      if (!appLock.enabled) await notesStore.clearAllLocks();
       await sync.loadSettings();
       await appTheme.load();
 
@@ -91,6 +102,7 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
           notesStore: notesStore,
           sync: sync,
           appTheme: appTheme,
+          appLock: appLock,
         );
       });
     } catch (error, stack) {
@@ -125,6 +137,7 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       notesStore: deps.notesStore,
       sync: deps.sync,
       appTheme: deps.appTheme,
+      appLock: deps.appLock,
     );
   }
 }
@@ -136,11 +149,13 @@ class DeadlineApp extends StatefulWidget {
     required this.notesStore,
     required this.sync,
     required this.appTheme,
+    required this.appLock,
   });
   final TaskStore store;
   final NotesStore notesStore;
   final SyncService sync;
   final AppTheme appTheme;
+  final AppLockService appLock;
 
   @override
   State<DeadlineApp> createState() => _DeadlineAppState();
@@ -176,6 +191,7 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.appLock.handleLifecycle(state);
     if (state == AppLifecycleState.resumed) {
       // Time has passed while the app was away: refresh colours, then sync.
       widget.store.load();
@@ -229,13 +245,17 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
           themeMode: widget.appTheme.mode,
           builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
             value: overlayStyle,
-            child: child ?? const SizedBox.shrink(),
+            child: AppLockGate(
+              appLock: widget.appLock,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
           home: HomeShell(
             store: widget.store,
             notesStore: widget.notesStore,
             sync: widget.sync,
             appTheme: widget.appTheme,
+            appLock: widget.appLock,
           ),
         );
       },

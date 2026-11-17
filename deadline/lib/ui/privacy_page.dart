@@ -39,6 +39,16 @@ class PrivacyPolicyPage extends StatelessWidget {
           'responsible for the data stored there.',
     ),
     (
+      'App lock and locked notes',
+      'If you turn on app lock, a salted hash of your four-digit PIN and your '
+          'biometric preference are stored in the Android Keystore-backed '
+          'secure storage. The PIN itself is never written down or sent '
+          'anywhere. A locked note keeps a device-local lock flag, is masked '
+          'in the lists and the archive, and is excluded from search results. '
+          'The lock is never included in sync data. Turning app lock off '
+          'clears every note lock.',
+    ),
+    (
       'Notifications',
       'Reminders and the optional daily digest are scheduled locally by '
           'Android. The app requests notification permission, and optionally '

@@ -1,7 +1,7 @@
 name: deadline
 description: Offline-first deadline tracker that sorts by what is due next.
 publish_to: "none"
-version: 1.0.4+5
+version: 1.0.15+16
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -17,6 +17,10 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   uuid: ^4.4.0
 
+  # security
+  local_auth: ^2.3.0
+  crypto: ^3.0.3
+
   # sync
   http: ^1.2.1
   connectivity_plus: ^6.0.5
@@ -31,6 +35,9 @@ dependencies:
 
   # home screen widget
   home_widget: ^0.6.0
+  file_picker: ^11.0.3
+  path_provider: ^2.1.5
+  open_file: ^3.5.11
 
 dev_dependencies:
   flutter_test:
