@@ -7,6 +7,7 @@ import '../models/attachment.dart';
 import '../models/note.dart';
 import '../services/attachments.dart';
 import '../theme.dart';
+import '../utils/list_continuation.dart';
 import '../utils/markup.dart';
 
 /// Returns the saved note, or null if the sheet was dismissed.
@@ -70,9 +71,22 @@ class _NoteFormState extends State<_NoteForm> {
   ];
   final _addedFiles = <NoteAttachment>[];
   final _removedFiles = <NoteAttachment>[];
+  final _listFormatter = ListContinuationFormatter();
   bool _saved = false;
 
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // The toolbar checkbox follows the caret, which moves on both typing and
+    // plain cursor moves.
+    _body.addListener(_refreshChecklistState);
+  }
+
+  void _refreshChecklistState() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
@@ -81,6 +95,7 @@ class _NoteFormState extends State<_NoteForm> {
     unawaited(_attachments.deleteAll(_removedFiles));
     if (!_saved) unawaited(_attachments.deleteAll(_addedFiles));
     _title.dispose();
+    _body.removeListener(_refreshChecklistState);
     _body.dispose();
     _tag.dispose();
     super.dispose();
@@ -139,6 +154,24 @@ class _NoteFormState extends State<_NoteForm> {
     final caret =
         _body.selection.baseOffset < 0 ? 0 : _body.selection.baseOffset;
     final result = toggleBullet(_body.text, caret);
+    _body.value = _body.value.copyWith(
+      text: result.text,
+      selection: TextSelection.collapsed(offset: result.start),
+    );
+    setState(() {});
+  }
+
+  int get _bodyCaret =>
+      _body.selection.baseOffset < 0 ? 0 : _body.selection.baseOffset;
+
+  ({String prefix, bool checked, String spacing, String text})?
+      get _currentChecklist {
+    final bounds = lineBoundsAt(_body.text, _bodyCaret);
+    return parseChecklistLine(_body.text.substring(bounds.start, bounds.end));
+  }
+
+  void _applyChecklist() {
+    final result = toggleChecklistAtCaret(_body.text, _bodyCaret);
     _body.value = _body.value.copyWith(
       text: result.text,
       selection: TextSelection.collapsed(offset: result.start),
@@ -258,6 +291,22 @@ class _NoteFormState extends State<_NoteForm> {
                     onTap: () => _applyTag('m')),
                 _FormatButton(
                     label: '•', tooltip: 'Bullet point', onTap: _applyBullet),
+                SizedBox(
+                  width: 36,
+                  height: 34,
+                  child: Tooltip(
+                    message: 'Checklist / tick line',
+                    child: Checkbox(
+                      key: const Key('note-checklist-checkbox'),
+                      value: _currentChecklist?.checked ?? false,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      activeColor: Ink0.text,
+                      checkColor: Ink0.surface,
+                      onChanged: (_) => _applyChecklist(),
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -266,6 +315,7 @@ class _NoteFormState extends State<_NoteForm> {
               maxLines: 8,
               minLines: 4,
               textCapitalization: TextCapitalization.sentences,
+              inputFormatters: [_listFormatter],
               decoration: const InputDecoration(hintText: 'Write something…'),
             ),
             const SizedBox(height: 10),

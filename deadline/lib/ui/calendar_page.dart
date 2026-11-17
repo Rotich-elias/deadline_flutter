@@ -64,6 +64,15 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   Widget build(BuildContext context) {
     final today = startOfDay(DateTime.now());
+    final screen = MediaQuery.of(context).size;
+    const horizontalPadding = 8.0;
+    const aspectRatio = 0.82;
+    final cellWidth = (screen.width - horizontalPadding * 2) / 7;
+    final desiredGridHeight = 6 * cellWidth / aspectRatio;
+    final maxGridHeight =
+        (screen.height - 240).clamp(0.0, double.infinity).toDouble();
+    final gridHeight =
+        desiredGridHeight < maxGridHeight ? desiredGridHeight : maxGridHeight;
     return Scaffold(
       body: SafeArea(
         child: ListenableBuilder(
@@ -132,14 +141,15 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 ),
                 SizedBox(
-                  height: 320,
+                  height: gridHeight,
                   child: GridView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    key: const Key('calendar-grid'),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: horizontalPadding),
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 7,
-                      childAspectRatio: 0.82,
+                      mainAxisExtent: gridHeight / 6,
                     ),
                     itemCount: days.length,
                     itemBuilder: (context, index) {
@@ -153,6 +163,8 @@ class _CalendarPageState extends State<CalendarPage> {
                           ? null
                           : urgencyOf(openFirst(dayTasks).first).color;
                       return InkWell(
+                        key: Key(
+                            'calendar-day-${day.year}-${day.month}-${day.day}'),
                         onTap: () => _select(day),
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
@@ -180,8 +192,10 @@ class _CalendarPageState extends State<CalendarPage> {
                               const SizedBox(height: 4),
                               if (cue != null)
                                 Container(
-                                  width: 6,
-                                  height: 6,
+                                  key: Key(
+                                      'calendar-event-dot-${day.year}-${day.month}-${day.day}'),
+                                  width: 12,
+                                  height: 12,
                                   decoration: BoxDecoration(
                                       color: cue, shape: BoxShape.circle),
                                 ),

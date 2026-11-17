@@ -33,6 +33,41 @@ Suggested build order
       archived and purged. The archive-preview rebuild (SHA-256 1cc31b94…)
       was superseded by 1.0.15+16, installed and device-verified on 18 Nov
       2026; the earlier installed 1.0.9+10 build was verified too.
+      Interactive note checklists added 18 Nov 2026 (1.0.18+19): lines written
+      as "- [ ] task" or "- [x] done" (or just "[ ] task") render as tappable
+      checkboxes in the note reader, and the editor's toolbar checkbox turns
+      the current line into a checklist item or ticks it. Ticking saves only
+      that line's marker through the normal note save path, so no schema,
+      sync, backend or dependency change is needed. Card previews and search
+      show ☐/☑ instead of the raw markers. Old handwritten "[  ]" and "[v]"
+      notes stay literal. 7 regression tests added in
+      test/note_checklist_test.dart; flutter analyze clean and all 169 tests
+      pass. Installed 18 Nov 2026 as 1.0.18+19 (SHA-256 0a881f63…) and
+      device-verified (SM-N9600): the toolbar checkbox turned "Buy milk" into
+      "- [ ] Buy milk" then ticked it; a second line became "- [ ] Pay rent";
+      the saved card preview showed ☑/☐; the reader rendered two tappable
+      checkboxes and tapping the second saved both as ticked. Existing "[  ]"
+      and "[v]" notes stayed literal, and the locked note stayed masked. Test
+      note archived and permanently deleted; baseline preserved at 3 open
+      deadlines, 7 saved notes, archive 63 deadlines / 6 notes. App lock was
+      still ON on relaunch (biometric prompt + PIN 2580 accepted).
+      Word-style Enter continuation added 18 Nov 2026 (1.0.19+20): pressing
+      Enter at the end of a checklist line inserts another unchecked "- [ ] "
+      line; a bullet line inserts another "- " line. Pressing Enter on an
+      empty item removes its marker and exits the list. Splitting a line
+      mid-text keeps the marker on both halves. This is a text-input formatter
+      on the note body, so it works with the soft keyboard too, and plain
+      multi-line pastes are left untouched. 6 more tests in
+      test/note_checklist_test.dart; flutter analyze clean and all 175 tests
+      pass. Installed 18 Nov 2026 as 1.0.19+20 (SHA-256 7d51d5f7…) and
+      device-verified (SM-N9600): Enter after "- [ ] One" produced another
+      "- [ ] " line, typing "Two" + Enter produced a third item, and Enter on
+      the empty item exited the list. A "- alpha" line continued with "- ",
+      plain text stayed plain, and the saved card preview showed ☐ One / ☐ Two
+      / Plain after / • alpha / • beta. Test note archived and permanently
+      deleted; baseline preserved at 3 open deadlines, 7 saved notes, archive
+      63 deadlines / 6 notes, locked note masked, app lock still ON (biometric
+      prompt + PIN 2580 accepted).
 • [~] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
       Built 17 Nov 2026 (1.0.10+11): the note editor's "Attach file" button
       picks existing images, PDFs, audio and documents (multi-select, 50 MB
@@ -106,7 +141,13 @@ Suggested build order
       test/calendar_test.dart; flutter analyze clean and all 138 tests pass.
       Its APK (SHA-256 87e63fae…) was superseded by 1.0.15+16, installed and
       device-verified on 18 Nov 2026 (month grid and selected-day agenda
-      checked on the phone).
+      checked on the phone). Fixed 18 Nov 2026 (1.0.16+17): the grid height now
+      follows the screen instead of a fixed 320px, so all six weeks (42 cells)
+      stay visible; the final December row was confirmed on the phone. Follow-up
+      18 Nov 2026 (1.0.17+18): the event dot grew from 6px to 12px and a size
+      regression test was added; the APK (SHA-256 1d57c065…) was installed and
+      the booked day still shows its event cue. flutter analyze clean and all
+      162 tests pass.
 • [x] Reminders & Push Notifications: Receive time-based or location-based alerts so you never miss a cutoff.
       Time-based heads-up reminders with the phone's notification tone, custom
       presets, reboot restore and a daily digest. Location-based alerts are not

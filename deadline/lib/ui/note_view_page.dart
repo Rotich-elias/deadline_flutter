@@ -7,6 +7,7 @@ import '../models/note.dart';
 import '../services/app_lock_service.dart';
 import '../services/attachments.dart';
 import '../theme.dart';
+import '../utils/markup.dart';
 import '../utils/rich_text.dart';
 import 'app_lock_settings.dart';
 import 'note_form_sheet.dart';
@@ -81,6 +82,67 @@ class NoteViewPage extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleChecklistLine(Note note, int lineIndex) async {
+    final body = note.body?.trim() ?? '';
+    final updated = toggleChecklistLineAt(body, lineIndex);
+    if (updated == body) return;
+    await store.save(note.copyWith(body: updated));
+  }
+
+  Widget _noteBody(Note note) {
+    final base = TextStyle(fontSize: 15.5, height: 1.55, color: Ink0.text);
+    const highlight = Color(0xFFE4C441);
+    final lines = note.body!.trim().split('\n');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < lines.length; i++) ...[
+          _noteLine(note, lines[i], i, base, highlight),
+        ],
+      ],
+    );
+  }
+
+  Widget _noteLine(
+      Note note, String line, int index, TextStyle base, Color highlight) {
+    final check = parseChecklistLine(line.trimLeft());
+    final span = buildRichSpan(
+      check?.text ?? line,
+      base: base,
+      highlight: highlight,
+      bullet: Ink0.muted,
+    );
+    if (check == null) {
+      if (line.trim().isEmpty) {
+        return SizedBox(height: (base.fontSize ?? 15) * (base.height ?? 1.5));
+      }
+      return SelectableText.rich(span);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 34,
+            height: 34,
+            child: Checkbox(
+              key: Key('note-checklist-box-$index'),
+              value: check.checked,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              activeColor: Ink0.text,
+              checkColor: Ink0.surface,
+              onChanged: (_) => _toggleChecklistLine(note, index),
+            ),
+          ),
+          const SizedBox(width: 2),
+          Expanded(child: SelectableText.rich(span)),
+        ],
+      ),
+    );
   }
 
   Future<void> _delete(BuildContext context, Note note) async {
@@ -191,15 +253,7 @@ class NoteViewPage extends StatelessWidget {
                   ),
                   if ((note.body ?? '').trim().isNotEmpty) ...[
                     const SizedBox(height: 20),
-                    SelectableText.rich(
-                      buildRichSpan(
-                        note.body!.trim(),
-                        base: TextStyle(
-                            fontSize: 15.5, height: 1.55, color: Ink0.text),
-                        highlight: const Color(0xFFE4C441),
-                        bullet: Ink0.muted,
-                      ),
-                    ),
+                    _noteBody(note),
                   ],
                   if (note.hasAttachments) ...[
                     const SizedBox(height: 22),

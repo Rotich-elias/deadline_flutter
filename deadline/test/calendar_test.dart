@@ -113,6 +113,12 @@ void main() {
 
       expect(find.text('Pay rent'), findsOneWidget);
       expect(find.text('Calendar'), findsNothing);
+      final eventDot = find.byKey(
+          Key('calendar-event-dot-${today.year}-${today.month}-${today.day}'));
+      expect(eventDot, findsOneWidget);
+      final dotSize = tester.getSize(eventDot);
+      expect(dotSize.width, greaterThanOrEqualTo(10));
+      expect(dotSize.height, greaterThanOrEqualTo(10));
       final thisMonth =
           DateFormat('MMMM y').format(DateTime(now.year, now.month, 1));
       final nextMonth =
@@ -124,6 +130,35 @@ void main() {
       await tester.tap(find.text('Today'));
       await tester.pumpAndSettle();
       expect(find.text('Pay rent'), findsOneWidget);
+    });
+
+    testWidgets('all six weeks of the month are visible in the grid',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final store = TaskStore(_MemoryTasksDb([]), startTicker: false);
+      await store.load();
+
+      await tester.pumpWidget(MaterialApp(
+        theme: buildTheme(Brightness.dark),
+        home: CalendarPage(store: store),
+      ));
+      await tester.pumpAndSettle();
+
+      final grid = find.byKey(const Key('calendar-grid'));
+      expect(grid, findsOneWidget);
+      final gridRect = tester.getRect(grid);
+      for (final day in calendarGrid(startOfMonth(DateTime.now()))) {
+        final label = DateFormat('y-MM-dd').format(day);
+        final cell =
+            find.byKey(Key('calendar-day-${day.year}-${day.month}-${day.day}'));
+        expect(cell, findsOneWidget, reason: '$label has no calendar cell');
+        final rect = tester.getRect(cell);
+        expect(rect.top, greaterThanOrEqualTo(gridRect.top - 1),
+            reason: '$label starts above the grid');
+        expect(rect.bottom, lessThanOrEqualTo(gridRect.bottom + 1),
+            reason: '$label is clipped by the grid');
+      }
     });
 
     testWidgets('the selected day pre-fills a new deadline', (tester) async {
