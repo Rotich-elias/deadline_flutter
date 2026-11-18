@@ -37,6 +37,11 @@ class AppLockService extends ChangeNotifier {
   final FlutterSecureStorage _storage;
   final LocalAuthentication _auth;
 
+  /// While an external camera/editor owns the screen, backgrounding is part of
+  /// the capture flow rather than the user leaving the app. The suppression is
+  /// time-boxed so a capture that never returns cannot leave the app unlocked.
+  DateTime? _externalCaptureUntil;
+
   bool _enabled = false;
   bool _locked = false;
   bool _biometricEnabled = false;
@@ -173,10 +178,27 @@ class AppLockService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Suppresses lock-on-background for one external capture. FLAG_SECURE stays
+  /// on throughout; only the lifecycle-driven lock is paused.
+  void beginExternalCapture({Duration timeout = const Duration(minutes: 5)}) {
+    _externalCaptureUntil = DateTime.now().add(timeout);
+  }
+
+  void endExternalCapture() => _externalCaptureUntil = null;
+
+  /// Whether lock-on-background is currently paused for an external capture.
+  bool get externalCaptureActive =>
+      _externalCaptureUntil != null &&
+      DateTime.now().isBefore(_externalCaptureUntil!);
+
+  bool get _externalCaptureActive => externalCaptureActive;
+
   /// Called from the app's lifecycle observer. Backgrounding the app locks it
-  /// so the next launch shows the PIN screen. Biometric prompts and system
-  /// dialogs only take the app to `inactive`, so they do not lock it.
+  /// so the next launch shows the PIN screen. Biometric prompts, system dialogs
+  /// and an in-flight camera capture only take the app to `inactive`/`hidden`
+  /// for a moment, so they do not lock it.
   void handleLifecycle(AppLifecycleState state) {
+    if (_externalCaptureActive) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       lockNow();

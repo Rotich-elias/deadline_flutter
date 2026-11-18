@@ -60,6 +60,17 @@
                 <data android:mimeType="application/octet-stream"/>
             </intent-filter>
         </activity>
+        <!-- Gives the system camera a temporary URI to write the photo into
+             app-owned storage instead of receiving a low-res thumbnail. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

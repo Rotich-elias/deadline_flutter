@@ -50,6 +50,7 @@ class NoteViewPage extends StatelessWidget {
       existing: note,
       existingTags: store.tags,
       existingLabels: store.labels,
+      appLock: appLock,
     );
     if (n != null) await store.save(n);
   }

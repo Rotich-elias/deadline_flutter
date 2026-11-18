@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Camera captures are written here by MainActivity and read back by
+         AttachmentService. No other app-visible paths are shared. -->
+    <cache-path name="captures" path="captures/" />
+</paths>

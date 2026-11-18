@@ -11,12 +11,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ShortcutManager
-import android.graphics.Bitmap
 import android.location.LocationManager
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.CalendarContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -27,12 +28,12 @@ import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Locale
 
 class MainActivity : FlutterFragmentActivity() {
@@ -42,6 +43,17 @@ class MainActivity : FlutterFragmentActivity() {
     private var methodChannel: MethodChannel? = null
 
     private var pendingPhotoResult: MethodChannel.Result? = null
+    private var pendingCapturePath: String? = null
+    private val captureTimeout = Handler(Looper.getMainLooper())
+    private val captureTimeoutRunnable = Runnable {
+        if (pendingPhotoResult != null) {
+            clearPersistedCapture()
+            pendingCapturePath = null
+            val pending = pendingPhotoResult
+            pendingPhotoResult = null
+            pending?.error("camera_timeout", "The camera took too long", null)
+        }
+    }
     private var pendingTranscriptResult: MethodChannel.Result? = null
     private var pendingPermissionAction: (() -> Unit)? = null
     private var pendingPermissionResult: MethodChannel.Result? = null
@@ -59,6 +71,9 @@ class MainActivity : FlutterFragmentActivity() {
         private const val REQ_LOCATION = 706
         private const val LOCATION_CHANNEL = "deadline_location"
         private const val QUICK_NOTE_EXTRA = "deadline_quick_note"
+        private const val CAPTURE_PREFS = "deadline_capture"
+        private const val CAPTURE_PATH_KEY = "pending_path"
+        private const val CAPTURE_TIMEOUT_MS = 5 * 60 * 1000L
     }
 
     /**
@@ -116,6 +131,7 @@ class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "capturePhoto" -> capturePhoto(result)
+                    "takePendingCapture" -> result.success(takePersistedCapture())
                     "startAudioRecording" -> startRecording(result)
                     "stopAudioRecording" -> result.success(stopRecording())
                     "transcribe" -> transcribe(result)
@@ -283,13 +299,81 @@ class MainActivity : FlutterFragmentActivity() {
     // --- Camera / audio / speech capture --------------------------------
 
     private fun capturePhoto(result: MethodChannel.Result) {
+        // Samsung's camera refuses to start when the caller has not been granted
+        // CAMERA at runtime. Ask first, then launch from the permission callback.
+        if (!hasPermission(Manifest.permission.CAMERA)) {
+            pendingPermissionAction = { launchCamera(result) }
+            pendingPermissionResult = result
+            ActivityCompat.requestPermissions(
+                this, arrayOf(Manifest.permission.CAMERA), REQ_CAMERA
+            )
+            return
+        }
+        launchCamera(result)
+    }
+
+    private fun launchCamera(result: MethodChannel.Result) {
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         if (intent.resolveActivity(packageManager) == null) {
             result.success(null)
             return
         }
+        val dir = File(cacheDir, "captures")
+        if (!dir.exists() && !dir.mkdirs()) {
+            result.error("camera_storage", "Could not prepare camera storage", null)
+            return
+        }
+        val file = File(dir, "photo_${System.currentTimeMillis()}.jpg")
+        val uri = try {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        } catch (e: Exception) {
+            Log.w("DeadlineCamera", "Could not create capture URI", e)
+            result.error("camera_uri", "Could not prepare the camera", null)
+            return
+        }
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+
+        // Persist the target before handing control away: with "Don't keep
+        // activities" the activity (and its Dart result) can be destroyed here.
+        pendingCapturePath = file.absolutePath
+        persistCapture(file.absolutePath)
         pendingPhotoResult = result
-        startActivityForResult(intent, REQ_CAMERA)
+        captureTimeout.removeCallbacks(captureTimeoutRunnable)
+        captureTimeout.postDelayed(captureTimeoutRunnable, CAPTURE_TIMEOUT_MS)
+        try {
+            startActivityForResult(intent, REQ_CAMERA)
+        } catch (e: Exception) {
+            Log.w("DeadlineCamera", "Could not start camera", e)
+            clearPersistedCapture()
+            pendingCapturePath = null
+            val pending = pendingPhotoResult
+            pendingPhotoResult = null
+            captureTimeout.removeCallbacks(captureTimeoutRunnable)
+            pending?.error("camera_start", e.message ?: "Could not open the camera", null)
+        }
+    }
+
+    private fun persistCapture(path: String) {
+        getSharedPreferences(CAPTURE_PREFS, Context.MODE_PRIVATE)
+            .edit().putString(CAPTURE_PATH_KEY, path).apply()
+    }
+
+    private fun peekPersistedCapture(): String? =
+        getSharedPreferences(CAPTURE_PREFS, Context.MODE_PRIVATE)
+            .getString(CAPTURE_PATH_KEY, null)
+
+    private fun clearPersistedCapture() {
+        getSharedPreferences(CAPTURE_PREFS, Context.MODE_PRIVATE)
+            .edit().remove(CAPTURE_PATH_KEY).apply()
+    }
+
+    /** Dart calls this after a cold restart to reclaim a photo taken just
+     * before the activity was destroyed. Consumes the pending path once. */
+    private fun takePersistedCapture(): String? {
+        val path = peekPersistedCapture()
+        if (path != null) clearPersistedCapture()
+        return path
     }
 
     private fun hasPermission(permission: String) =
@@ -358,21 +442,24 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_CAMERA) {
-            val bitmap = data?.extras?.get("data") as? Bitmap
-            val path = if (bitmap != null && resultCode == RESULT_OK) {
-                try {
-                    val file = File(filesDir, "photo_${System.currentTimeMillis()}.jpg")
-                    FileOutputStream(file).use { out ->
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                    }
-                    file.absolutePath
-                } catch (e: Exception) {
-                    Log.w("DeadlineCamera", "Could not save photo", e)
-                    null
-                }
-            } else null
-            pendingPhotoResult?.success(path)
-            pendingPhotoResult = null
+            captureTimeout.removeCallbacks(captureTimeoutRunnable)
+            // The activity may have been recreated while the camera was open;
+            // the persisted path is the only record of the intended file.
+            val path = pendingCapturePath ?: peekPersistedCapture()
+            if (resultCode == RESULT_OK && path != null && File(path).exists()) {
+                // Keep the persisted path: Dart reclaims it after a cold start.
+                val pending = pendingPhotoResult
+                pendingPhotoResult = null
+                pendingCapturePath = null
+                pending?.success(path)
+            } else {
+                if (path != null) File(path).delete()
+                clearPersistedCapture()
+                pendingCapturePath = null
+                val pending = pendingPhotoResult
+                pendingPhotoResult = null
+                pending?.success(null)
+            }
         }
         if (requestCode == REQ_SPEECH) {
             val text = if (resultCode == RESULT_OK) {

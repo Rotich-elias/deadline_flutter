@@ -5,7 +5,9 @@ import 'package:uuid/uuid.dart';
 
 import '../models/attachment.dart';
 import '../models/note.dart';
+import '../services/app_lock_service.dart';
 import '../services/attachments.dart';
+import '../services/note_draft_service.dart';
 import '../services/platform_bridge.dart';
 import '../theme.dart';
 import '../utils/list_continuation.dart';
@@ -25,6 +27,7 @@ Future<Note?> showNoteForm(
   String? initialBody,
   String? initialTag,
   List<String> existingLabels = const [],
+  AppLockService? appLock,
 }) {
   return showModalBottomSheet<Note>(
     context: context,
@@ -40,6 +43,7 @@ Future<Note?> showNoteForm(
       initialBody: initialBody,
       initialTag: initialTag,
       existingLabels: existingLabels,
+      appLock: appLock,
     ),
   );
 }
@@ -52,6 +56,7 @@ class _NoteForm extends StatefulWidget {
     this.initialBody,
     this.initialTag,
     this.existingLabels = const [],
+    this.appLock,
   });
   final Note? existing;
   final List<String> existingTags;
@@ -59,6 +64,7 @@ class _NoteForm extends StatefulWidget {
   final String? initialBody;
   final String? initialTag;
   final List<String> existingLabels;
+  final AppLockService? appLock;
 
   @override
   State<_NoteForm> createState() => _NoteFormState();
@@ -74,7 +80,8 @@ class _NoteFormState extends State<_NoteForm> {
   late final TextEditingController _notebook =
       TextEditingController(text: widget.existing?.notebook ?? '');
   late List<String> _labels = [...?widget.existing?.labels];
-  final _draftId = const Uuid().v4();
+  String _draftId = const Uuid().v4();
+  final _drafts = NoteDraftService();
   final _attachments = AttachmentService();
   late final List<NoteAttachment> _files = [
     for (final a in widget.existing?.attachments ?? const <NoteAttachment>[]) a,
@@ -93,6 +100,25 @@ class _NoteFormState extends State<_NoteForm> {
     // The toolbar checkbox follows the caret, which moves on both typing and
     // plain cursor moves.
     _body.addListener(_refreshChecklistState);
+    // A previous camera hand-off may have killed the activity mid-draft.
+    unawaited(_restoreInterruptedCapture());
+  }
+
+  Future<void> _restoreInterruptedCapture() async {
+    final draft = await _drafts.take();
+    final capturedPath = await PlatformBridge.takePendingCapture();
+    if (!mounted) return;
+    if (draft != null) {
+      _draftId = draft.draftId;
+      setState(() {
+        _title.text = draft.title;
+        _body.text = draft.body;
+        _tag.text = draft.tag;
+        _notebook.text = draft.notebook;
+        _labels = draft.labels;
+      });
+    }
+    if (capturedPath != null) await _importCaptured(capturedPath);
   }
 
   void _refreshChecklistState() {
@@ -249,9 +275,38 @@ class _NoteFormState extends State<_NoteForm> {
   }
 
   Future<void> _capturePhoto() async {
-    final path = await PlatformBridge.capturePhoto();
+    // The camera is another app: Android may destroy this activity, and with
+    // it the Dart form, before control comes back. Back up the draft and the
+    // target path first, and hold off lock-on-background while we are away.
+    await _drafts.save(NoteDraft(
+      title: _title.text,
+      body: _body.text,
+      tag: _tag.text,
+      notebook: _notebook.text,
+      labels: List.unmodifiable(_labels),
+      draftId: _draftId,
+      existingId: widget.existing?.id,
+    ));
+    widget.appLock?.beginExternalCapture();
+    String? path;
+    try {
+      path = await PlatformBridge.capturePhoto();
+    } on CameraCaptureException catch (e) {
+      if (mounted) _say(e.message);
+      return;
+    } catch (e) {
+      if (mounted) _say('The camera could not open: $e');
+      return;
+    } finally {
+      widget.appLock?.endExternalCapture();
+      // If this form is still alive it owns the state, so the disk backup and
+      // native cold-restart copy are no longer needed. If the activity died,
+      // this never runs and the new form restores them instead.
+      unawaited(_drafts.clear());
+      unawaited(PlatformBridge.takePendingCapture());
+    }
     if (path == null) {
-      _say('Camera is not available on this device.');
+      if (mounted) _say('No photo was taken.');
       return;
     }
     await _importCaptured(path);
@@ -333,6 +388,7 @@ class _NoteFormState extends State<_NoteForm> {
     final body = _body.text.trim();
     final tag = _tag.text.trim();
     unawaited(_attachments.deleteAll(_removedFiles));
+    unawaited(_drafts.clear());
     _saved = true;
     final result = widget.existing == null
         ? Note(

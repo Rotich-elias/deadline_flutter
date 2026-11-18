@@ -8,6 +8,7 @@ import 'data/notes_store.dart';
 import 'data/task_store.dart';
 import 'services/app_lock_service.dart';
 import 'services/location_alerts.dart';
+import 'services/note_draft_service.dart';
 import 'services/notifications.dart';
 import 'services/platform_bridge.dart';
 import 'sync/sync_service.dart';
@@ -39,6 +40,7 @@ class _AppDeps {
     required this.appTheme,
     required this.appLock,
     required this.quickNote,
+    required this.pendingDraft,
   });
 
   final TaskStore store;
@@ -47,6 +49,7 @@ class _AppDeps {
   final AppTheme appTheme;
   final AppLockService appLock;
   final bool quickNote;
+  final bool pendingDraft;
 }
 
 class DeadlineBootstrap extends StatefulWidget {
@@ -98,6 +101,9 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       // Consume the launcher shortcut flag once, at startup. HomeShell waits
       // for the lock gate to open before acting on it.
       final quickNote = await PlatformBridge.takeQuickNote();
+      // A camera hand-off can kill the activity mid-draft. Reopen the note
+      // form after the lock gate opens so the draft and photo are restored.
+      final pendingDraft = await NoteDraftService().peek() != null;
 
       final elapsed = DateTime.now().difference(started);
       if (elapsed < _minSplash) {
@@ -113,6 +119,7 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
           appTheme: appTheme,
           appLock: appLock,
           quickNote: quickNote,
+          pendingDraft: pendingDraft,
         );
       });
     } catch (error, stack) {
@@ -149,6 +156,7 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       appTheme: deps.appTheme,
       appLock: deps.appLock,
       quickNote: deps.quickNote,
+      pendingDraft: deps.pendingDraft,
     );
   }
 }
@@ -162,6 +170,7 @@ class DeadlineApp extends StatefulWidget {
     required this.appTheme,
     required this.appLock,
     required this.quickNote,
+    required this.pendingDraft,
   });
   final TaskStore store;
   final NotesStore notesStore;
@@ -169,6 +178,7 @@ class DeadlineApp extends StatefulWidget {
   final AppTheme appTheme;
   final AppLockService appLock;
   final bool quickNote;
+  final bool pendingDraft;
 
   @override
   State<DeadlineApp> createState() => _DeadlineAppState();
@@ -270,6 +280,7 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
             appTheme: widget.appTheme,
             appLock: widget.appLock,
             quickNote: widget.quickNote,
+            pendingDraft: widget.pendingDraft,
           ),
         );
       },

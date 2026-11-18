@@ -26,6 +26,7 @@ class HomeShell extends StatefulWidget {
     required this.appTheme,
     required this.appLock,
     this.quickNote = false,
+    this.pendingDraft = false,
   });
 
   final TaskStore store;
@@ -37,6 +38,9 @@ class HomeShell extends StatefulWidget {
   /// True when this launch came from the "Quick note" home-screen shortcut.
   final bool quickNote;
 
+  /// True when a camera capture killed the activity with an unsaved note draft.
+  final bool pendingDraft;
+
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
@@ -45,6 +49,7 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   bool _draining = false;
   late bool _pendingQuickNote = widget.quickNote;
+  late bool _pendingDraft = widget.pendingDraft;
   late int _seenQuickNoteRequests = SharedNotesInbox.instance.quickNoteRequests;
 
   @override
@@ -66,17 +71,20 @@ class _HomeShellState extends State<HomeShell> {
 
   void _onLockChanged() => _maybeOpenQuickNote();
 
-  /// The shortcut opens a blank note, but only after the user has passed the
-  /// app-lock gate. Pending shares are drained first by initState.
+  /// The shortcut (or a draft interrupted by the camera) opens a note form,
+  /// but only after the user has passed the app-lock gate. Pending shares are
+  /// drained first by initState.
   Future<void> _maybeOpenQuickNote() async {
-    if (!_pendingQuickNote || !mounted) return;
+    if ((!_pendingQuickNote && !_pendingDraft) || !mounted) return;
     if (widget.appLock.enabled && widget.appLock.locked) return;
     _pendingQuickNote = false;
+    _pendingDraft = false;
     setState(() => _index = 1);
     final note = await showNoteForm(
       context,
       existingTags: widget.notesStore.tags,
       existingLabels: widget.notesStore.labels,
+      appLock: widget.appLock,
     );
     if (note != null) await widget.notesStore.add(note);
   }

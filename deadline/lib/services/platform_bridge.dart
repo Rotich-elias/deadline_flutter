@@ -1,5 +1,15 @@
 import 'package:flutter/services.dart';
 
+/// A camera failure reported explicitly by the Android bridge.
+class CameraCaptureException implements Exception {
+  const CameraCaptureException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Thin Dart wrapper over the small Android bridge in MainActivity.kt.
 ///
 /// Every method is optional: on unsupported platforms or when a permission is
@@ -27,7 +37,19 @@ class PlatformBridge {
   }
 
   /// Take a photo with the system camera and get a JPEG path in app storage.
-  static Future<String?> capturePhoto() => _string('capturePhoto');
+  /// Native errors are thrown as [CameraCaptureException] so the form can show
+  /// them instead of treating an error string as a file path.
+  static Future<String?> capturePhoto() async {
+    try {
+      return await _channel.invokeMethod<String>('capturePhoto');
+    } on PlatformException catch (e) {
+      throw CameraCaptureException(e.message ?? 'The camera could not open.');
+    }
+  }
+
+  /// Path left by a capture whose activity was destroyed before Dart received
+  /// the method-channel result. Consumes the pending path exactly once.
+  static Future<String?> takePendingCapture() => _string('takePendingCapture');
 
   /// Start/stop a voice memo. Both return the finished file path (stop) or a
   /// placeholder path (start, so the UI can show "Recording…").

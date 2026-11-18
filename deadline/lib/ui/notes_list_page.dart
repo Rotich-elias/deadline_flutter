@@ -78,6 +78,7 @@ class _NotesListPageState extends State<NotesListPage> {
       context,
       existingTags: widget.store.tags,
       existingLabels: widget.store.labels,
+      appLock: widget.appLock,
     );
     if (n != null) await widget.store.add(n);
   }
@@ -93,6 +94,7 @@ class _NotesListPageState extends State<NotesListPage> {
       initialTitle: draft.title,
       initialBody: draft.body,
       initialTag: draft.tag,
+      appLock: widget.appLock,
     );
     if (n != null) await widget.store.add(n);
   }
