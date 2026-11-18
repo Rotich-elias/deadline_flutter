@@ -24,11 +24,15 @@ be locked with its own setup step that creates a PIN but leaves app lock off.
 The PIN is now kept when app lock is turned off, and locked notes stay locked;
 app-wide launch gating and FLAG_SECURE still follow app lock. Four new tests
 cover the PIN lifecycle and the lock-note flow (268 total).
-Device check 19 Nov 2026: 1.0.24+25 installed and launched successfully
-(versionName=1.0.24, versionCode=25). App lock was already OFF on the phone at
-install time (no PIN gate, no SECURE window flag), so the app-lock gate check
-did not apply. The note-only PIN flow was not exercised on device because no
-user-authorized PIN was available; it is covered by the four new tests.
+Device-verified 19 Nov 2026: 1.0.24+25 installed and launched
+(versionName=1.0.24, versionCode=25). App lock OFF throughout: no launch PIN
+gate and no SECURE window flag. With a user-authorized PIN entered only through
+the UI, locking a note showed the "Create a note PIN" step, the note then
+appeared as "Locked note / Tap to unlock" in the list, reopening it prompted for
+the PIN, a wrong PIN was rejected, and the correct PIN opened it. A force-stop
+and cold relaunch kept the note locked (no orphan unlock) and the PIN still
+worked afterwards. The test note was restored to unlocked at the end. The PIN
+itself is never recorded here or in code.
 
 Suggested build order
 1. Pin/favourite + priority levels (one schema bump)
