@@ -134,6 +134,11 @@ Future<void> _handleResponse(NotificationResponse response) async {
   final taskId = response.payload;
   if (taskId == null || taskId.isEmpty) return;
 
+  // This also runs in a fresh background isolate that never went through
+  // init(), so make sure the plugin and timezone data are ready before
+  // cancelling reminders or scheduling a snooze.
+  await Notifications.instance._ensureReady();
+
   final db = LocalDb();
   await db.open();
   final task = await db.find(taskId);
@@ -261,17 +266,38 @@ class Notifications {
 
   /// Fires a reminder immediately so the user can confirm the pop-up and the
   /// tone without waiting for a real deadline.
-  Future<void> showTestReminder() async {
+  ///
+  /// The alert carries an open task's id as its payload so the action buttons
+  /// do something real: "Mark done" finishes that task and "Snooze 1h" sets a
+  /// fresh reminder for it. Returns the task title used, or null when there
+  /// was no open task to attach.
+  Future<String?> showTestReminder() async {
     await _ensureReady();
     try {
+      final db = LocalDb();
+      await db.open();
+      final open = await db.all();
+      Task? sample;
+      for (final task in open) {
+        if (!task.done) {
+          sample = task;
+          break;
+        }
+      }
+
       await _plugin.show(
         _testId,
-        'Reminder test',
-        'This is how a deadline reminder pops up and sounds.',
+        sample == null ? 'Reminder test' : 'Reminder test: ${sample.title}',
+        sample == null
+            ? 'This is how a deadline reminder pops up and sounds.'
+            : 'Try Mark done or Snooze 1h on this task.',
         _details,
+        payload: sample?.id,
       );
+      return sample?.title;
     } catch (e) {
       debugPrint('Could not show the test reminder: $e');
+      return null;
     }
   }
 

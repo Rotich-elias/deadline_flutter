@@ -86,6 +86,13 @@
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false" />
 
+        <!-- Delivers the "Mark done" / "Snooze 1h" button presses to Flutter.
+             Without it Android silently drops those broadcasts, so the buttons
+             appear to do nothing. -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"
+            android:exported="false" />
+
         <!-- Without this, every reminder is lost when the phone restarts. -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"

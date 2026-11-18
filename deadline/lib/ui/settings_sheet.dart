@@ -526,11 +526,13 @@ class _DigestSheetState extends State<_DigestSheet> {
   Future<void> _sendTestAlert() async {
     if (!_notificationsOn) await _allowNotifications();
     if (!mounted) return;
-    await Notifications.instance.showTestReminder();
+    final target = await Notifications.instance.showTestReminder();
     if (!mounted) return;
     setState(() {
-      _notice = 'Test alert sent — watch for the banner at the top of the '
-          'screen.';
+      _notice = target == null
+          ? 'Test alert sent — watch for the banner at the top of the screen.'
+          : 'Test alert sent for "$target" — its Mark done and Snooze 1h '
+              'buttons work on that task.';
     });
   }
 

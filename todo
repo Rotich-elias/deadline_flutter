@@ -3,13 +3,15 @@ Status: [x] shipped · [~] partial · [ ] not started
 Last reviewed: 18 November 2026
 Local/client features are shipped in 1.0.21+22; server-backed and some native
 integrations remain partial (marked [~] below). Dart format, flutter analyze and
-the full 236-test suite were clean; that release APK was installed and
+the full 248-test suite are clean. Release APKs were installed and
 device-verified on the SM-N9600 with app lock still ON (PIN <PIN> + fingerprint).
-All smoke-test data was purged; final baseline: 4 open deadlines, 5 notes (the
-device's own data was preserved), empty test draft.
-A later clickable-link / notebook-page / Samsung Notes import update is built
-with 245 tests clean, but the phone was disconnected before it could be
-installed and verified; those new items are marked [~] below.
+Later 18 Nov 2026 work (clickable links / notebook pages / Samsung import fix /
+notification actions) is built with 248 tests clean and installed on the phone.
+Device-verified: 27 notes with clean titles after the Samsung re-share fix, Pages
+grid default with a persisted List toggle, notification "Mark done" completing a
+task and "Snooze 1h" scheduling an alarm exactly one hour later, and FLAG_SECURE
+plus the app-lock gate still active. The user is personally verifying the
+imported note contents, so those items stay partial until they confirm.
 
 Suggested build order
 1. Pin/favourite + priority levels (one schema bump)
@@ -90,19 +92,27 @@ Suggested build order
       to a two-column Pages grid with a persisted List view toggle — the
       Samsung Notes-style layout chosen by the user. No new dependency, schema
       or sync change. Four link-tap regression tests added in
-      test/link_tap_test.dart; dart format, flutter analyze and all 245 tests
-      pass. A release APK was built but NOT yet installed/device-verified
-      because the phone was disconnected, so this item stays partial.
+      test/link_tap_test.dart; dart format, flutter analyze and all 248 tests
+      pass. Installed 18 Nov 2026 and device-verified: Notes opened in the
+      two-column Pages grid, switching to List and back worked, and the Pages
+      choice survived a force-stop/relaunch. Tapping an actual link in a note
+      was not exercised on the phone (covered by tests only), so this item
+      stays partial.
 • [~] Samsung Notes Full Import & Title Repair:
       Built 18 Nov 2026 (unreleased): Samsung Notes text exports are named
       `<title>_<yymmdd>_<hhmmss>.txt`; the timestamp is now stripped on import
       and an on-boot repair renames notes imported by older builds. For generic
       "Notes_…" exports the repair also re-splits the first line out of the
-      body, so re-sharing the same note is recognised as a duplicate. Tests in
-      test/note_import_test.dart cover the new parsing, repair and duplicate
-      path. Built with 245 tests clean but not device-verified yet (phone
-      disconnected); the first 24-note share produced 22 imported notes, so a
-      fresh full share still needs to be checked on the phone.
+      body, so re-sharing the same note is recognised as a duplicate. Samsung
+      also appends " (1)", " (2)" … to repeated export file names; that suffix
+      is now stripped before timestamp parsing, and a boot cleanup purges the
+      newer duplicate copy. Tests in test/note_import_test.dart cover the new
+      parsing, repair, copy suffix and duplicate purge. Built with 248 tests
+      clean and installed 18 Nov 2026. Device-verified: a full re-share first
+      created 49 notes with " (1)" titles, then the new build cleaned them back
+      to 27 notes with readable titles (Lapi, Ludo idea, Equity me, …) and no
+      timestamped titles. The first 24-note share produced 22 imported notes;
+      the user is verifying copied contents personally, so this stays partial.
 • [~] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
       Built 17 Nov 2026 (1.0.10+11): the note editor's "Attach file" button
       picks existing images, PDFs, audio and documents (multi-select, 50 MB
@@ -239,6 +249,18 @@ Suggested build order
       path ("ZZTestPlace · 200 m" on a test task, then purged) was device-
       verified; an actual proximity alert firing was not, so this item stays
       partial.
+      Notification action buttons fixed 18 Nov 2026 (unreleased): the popup's
+      "Mark done" and "Snooze 1h" presses were silently dropped because the
+      plugin's ActionBroadcastReceiver was missing from AndroidManifest.xml.
+      The receiver is now declared, test alerts carry an open task's id as
+      their payload so the buttons do something real, and the action handler
+      initialises the plugin/timezone before cancelling or snoozing. A manifest
+      regression test was added in test/notification_actions_test.dart.
+      Device-verified 18 Nov 2026 (SM-N9600, 248 tests clean): logcat showed
+      only Android's notification_action_clicked before the fix and no app
+      activity; after it, "Mark done" reduced open deadlines 2→1 and "Snooze
+      1h" scheduled a new alarm at exactly +60 minutes, with the notification
+      dismissed in both cases. App lock and FLAG_SECURE stayed ON.
 • [x] Daily Planners / "My Day" Views: Filter down a massive list into a realistic daily focus list.
       Shipped 17 Nov 2026 (1.0.13+14): a fourth My Day tab groups open work
       into Overdue, Today and Pinned (later) sections, with no duplicates — a
