@@ -1,12 +1,12 @@
 Deadlines&Notes — feature backlog
 Status: [x] shipped · [~] partial · [ ] not started
 Last reviewed: 18 November 2026
-Local/client features are shipped in 1.0.21+22; server-backed and some native
+Local/client features are shipped in 1.0.22+23; server-backed and some native
 integrations remain partial (marked [~] below). Dart format, flutter analyze and
-the full 248-test suite are clean. Release APKs were installed and
+the full 248-test suite are clean. The final release APK was installed and
 device-verified on the SM-N9600 with app lock still ON (PIN <PIN> + fingerprint).
-Later 18 Nov 2026 work (clickable links / notebook pages / Samsung import fix /
-notification actions) is built with 248 tests clean and installed on the phone.
+The 18 Nov 2026 work (clickable links / notebook pages / Samsung import fix /
+notification actions) is included in 1.0.22+23 with 248 tests clean.
 Device-verified: 27 notes with clean titles after the Samsung re-share fix, Pages
 grid default with a persisted List toggle, notification "Mark done" completing a
 task and "Snooze 1h" scheduling an alarm exactly one hour later, and FLAG_SECURE
@@ -85,7 +85,7 @@ Suggested build order
       63 deadlines / 6 notes, locked note masked, app lock still ON (biometric
       prompt + PIN <PIN> accepted).
 • [~] Clickable Links & Notebook Pages:
-      Built 18 Nov 2026 (unreleased): http(s) addresses in note bodies and task
+      Shipped 18 Nov 2026 (1.0.22+23): http(s) addresses in note bodies and task
       notes, and inline [[wiki]] links in note bodies, are tappable and open
       through the existing platform bridge / link follower. Notes gained a
       ruled-paper look in cards and the reader, and the Notes tab now defaults
@@ -99,7 +99,7 @@ Suggested build order
       was not exercised on the phone (covered by tests only), so this item
       stays partial.
 • [~] Samsung Notes Full Import & Title Repair:
-      Built 18 Nov 2026 (unreleased): Samsung Notes text exports are named
+      Shipped 18 Nov 2026 (1.0.22+23): Samsung Notes text exports are named
       `<title>_<yymmdd>_<hhmmss>.txt`; the timestamp is now stripped on import
       and an on-boot repair renames notes imported by older builds. For generic
       "Notes_…" exports the repair also re-splits the first line out of the
@@ -249,7 +249,7 @@ Suggested build order
       path ("ZZTestPlace · 200 m" on a test task, then purged) was device-
       verified; an actual proximity alert firing was not, so this item stays
       partial.
-      Notification action buttons fixed 18 Nov 2026 (unreleased): the popup's
+      Notification action buttons fixed 18 Nov 2026 (1.0.22+23): the popup's
       "Mark done" and "Snooze 1h" presses were silently dropped because the
       plugin's ActionBroadcastReceiver was missing from AndroidManifest.xml.
       The receiver is now declared, test alerts carry an open task's id as

@@ -1,7 +1,7 @@
 name: deadline
 description: Offline-first deadline tracker that sorts by what is due next.
 publish_to: "none"
-version: 1.0.21+22
+version: 1.0.22+23
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
