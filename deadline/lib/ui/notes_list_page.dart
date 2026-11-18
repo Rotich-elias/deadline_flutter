@@ -6,6 +6,7 @@ import '../models/note.dart';
 import '../services/app_lock_service.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
+import 'activity_log_page.dart';
 import 'app_lock_settings.dart';
 import 'archive_page.dart';
 import 'note_import_ui.dart';
@@ -72,7 +73,11 @@ class _NotesListPageState extends State<NotesListPage> {
   }
 
   Future<void> _create(BuildContext context) async {
-    final n = await showNoteForm(context, existingTags: widget.store.tags);
+    final n = await showNoteForm(
+      context,
+      existingTags: widget.store.tags,
+      existingLabels: widget.store.labels,
+    );
     if (n != null) await widget.store.add(n);
   }
 
@@ -83,6 +88,7 @@ class _NotesListPageState extends State<NotesListPage> {
     final n = await showNoteForm(
       context,
       existingTags: widget.store.tags,
+      existingLabels: widget.store.labels,
       initialTitle: draft.title,
       initialBody: draft.body,
       initialTag: draft.tag,
@@ -105,6 +111,7 @@ class _NotesListPageState extends State<NotesListPage> {
         store: widget.store,
         noteId: note.id,
         appLock: widget.appLock,
+        taskStore: widget.taskStore,
       ),
     ));
   }
@@ -156,6 +163,18 @@ class _NotesListPageState extends State<NotesListPage> {
                     tags: widget.store.tags,
                     selected: widget.store.tagFilter,
                     onSelect: widget.store.setTagFilter,
+                  ),
+                if (widget.store.labels.isNotEmpty)
+                  TagFilterRow(
+                    tags: widget.store.labels,
+                    selected: widget.store.labelFilter,
+                    onSelect: widget.store.setLabelFilter,
+                  ),
+                if (widget.store.notebooks.isNotEmpty)
+                  TagFilterRow(
+                    tags: widget.store.notebooks,
+                    selected: widget.store.notebookFilter,
+                    onSelect: widget.store.setNotebookFilter,
                   ),
                 Expanded(
                   child: notes.isEmpty
@@ -268,7 +287,7 @@ class _Header extends StatelessWidget {
           PopupMenuButton<String>(
             tooltip: 'Notes menu',
             icon: Icon(Icons.more_vert, color: Ink0.muted),
-            onSelected: (value) {
+            onSelected: (value) async {
               switch (value) {
                 case 'help':
                   onImportHelp();
@@ -278,6 +297,12 @@ class _Header extends StatelessWidget {
                   onPasteNote();
                 case 'applock':
                   showAppLockSettings(context, appLock, store);
+                case 'activity':
+                  final navigator = Navigator.of(context);
+                  final log = await store.activityLog;
+                  navigator.push(MaterialPageRoute<void>(
+                    builder: (_) => ActivityLogPage(log: log),
+                  ));
               }
             },
             itemBuilder: (_) => [
@@ -290,6 +315,8 @@ class _Header extends StatelessWidget {
                 child: Text('Start from a template'),
               ),
               const PopupMenuItem(value: 'paste', child: Text('Paste a note')),
+              const PopupMenuItem(
+                  value: 'activity', child: Text('Activity log')),
               PopupMenuItem(
                 value: 'applock',
                 child: Row(

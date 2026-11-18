@@ -2,16 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/notes_store.dart';
+import '../data/task_store.dart';
 import '../models/attachment.dart';
 import '../models/note.dart';
+import '../models/task.dart';
 import '../services/app_lock_service.dart';
 import '../services/attachments.dart';
 import '../theme.dart';
+import '../utils/linking.dart';
 import '../utils/markup.dart';
 import '../utils/rich_text.dart';
 import 'app_lock_settings.dart';
 import 'note_form_sheet.dart';
 import 'note_lock.dart';
+import 'task_form_sheet.dart';
 
 /// Full-page read view for a single note, opened from [NotesListPage].
 /// Stays open across edits (and closes itself if the note is deleted)
@@ -22,11 +26,15 @@ class NoteViewPage extends StatelessWidget {
     required this.store,
     required this.noteId,
     required this.appLock,
+    this.taskStore,
   });
 
   final NotesStore store;
   final String noteId;
   final AppLockService appLock;
+
+  /// Supplied by the Notes tab so `[[tasks:...]]` links can open a deadline.
+  final TaskStore? taskStore;
 
   static final AttachmentService _attachments = AttachmentService();
 
@@ -37,8 +45,12 @@ class NoteViewPage extends StatelessWidget {
   }
 
   Future<void> _edit(BuildContext context, Note note) async {
-    final n =
-        await showNoteForm(context, existing: note, existingTags: store.tags);
+    final n = await showNoteForm(
+      context,
+      existing: note,
+      existingTags: store.tags,
+      existingLabels: store.labels,
+    );
     if (n != null) await store.save(n);
   }
 
@@ -84,11 +96,88 @@ class NoteViewPage extends StatelessWidget {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _toast(BuildContext context, String message) {
+    if (context.mounted) _say(context, message);
+  }
+
   Future<void> _toggleChecklistLine(Note note, int lineIndex) async {
     final body = note.body?.trim() ?? '';
     final updated = toggleChecklistLineAt(body, lineIndex);
     if (updated == body) return;
     await store.save(note.copyWith(body: updated));
+  }
+
+  Future<void> _openNote(BuildContext context, String id) async {
+    final target = store.notes.where((n) => n.id == id).firstOrNull;
+    if (target == null) {
+      _toast(context, 'That note is no longer available.');
+      return;
+    }
+    if (target.locked && !await confirmNoteAccess(context, appLock)) return;
+    if (!context.mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => NoteViewPage(
+        store: store,
+        noteId: target.id,
+        appLock: appLock,
+        taskStore: taskStore,
+      ),
+    ));
+  }
+
+  Future<void> _openTask(
+    BuildContext context,
+    String? id,
+    String? title,
+  ) async {
+    final tasks = taskStore?.tasks ?? const <Task>[];
+    Task? target;
+    if (id != null) {
+      for (final task in tasks) {
+        if (task.id == id) {
+          target = task;
+          break;
+        }
+      }
+    }
+    target ??= tasks
+        .where(
+            (t) => t.title.toLowerCase() == (title ?? '').toLowerCase().trim())
+        .firstOrNull;
+    if (target == null) {
+      _toast(context, 'That deadline is no longer available.');
+      return;
+    }
+    final edited = await showTaskForm(
+      context,
+      existing: target,
+      existingTags: taskStore?.tags ?? const [],
+      existingLabels: taskStore?.labels ?? const [],
+      collaborationEnabled: false,
+    );
+    if (edited != null) await taskStore?.save(edited);
+  }
+
+  Future<void> _follow(BuildContext context, NoteLink link) async {
+    if (link.isTask) {
+      await _openTask(context, null, link.target);
+      return;
+    }
+    for (final note in store.notes) {
+      if (note.title.toLowerCase() == link.target.toLowerCase().trim()) {
+        await _openNote(context, note.id);
+        return;
+      }
+    }
+    _toast(context, 'No note titled "${link.target}" yet.');
+  }
+
+  Future<void> _followBacklink(BuildContext context, Backlink link) async {
+    if (link.sourceIsTask) {
+      await _openTask(context, link.sourceId, link.sourceTitle);
+    } else {
+      await _openNote(context, link.sourceId);
+    }
   }
 
   Widget _noteBody(Note note) {
@@ -179,6 +268,11 @@ class NoteViewPage extends StatelessWidget {
           return const Scaffold(body: SizedBox.shrink());
         }
         final note = found;
+        final outgoing = LinkParser.parse(note.body);
+        final backlinks = BacklinkIndex(
+          store.notes,
+          taskStore?.tasks ?? const <Task>[],
+        ).forTarget(note.title, isTask: false);
         return Scaffold(
           appBar: AppBar(
             actions: [
@@ -216,6 +310,24 @@ class NoteViewPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if ((note.notebook ?? '').trim().isNotEmpty) ...[
+                    Row(
+                      children: [
+                        Icon(Icons.book_outlined, size: 13, color: Ink0.muted),
+                        const SizedBox(width: 4),
+                        Text(
+                          note.notebook!.trim().toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                            color: Ink0.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   if ((note.tag ?? '').trim().isNotEmpty) ...[
                     Text(
                       note.tag!.trim().toUpperCase(),
@@ -251,9 +363,79 @@ class NoteViewPage extends StatelessWidget {
                       ],
                     ],
                   ),
+                  if (note.labels.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        for (final label in note.labels)
+                          Chip(
+                            key: Key('note-label-$label'),
+                            label: Text(label,
+                                style: const TextStyle(fontSize: 11.5)),
+                            visualDensity: VisualDensity.compact,
+                            side: BorderSide(color: Ink0.line),
+                            backgroundColor: Ink0.surfaceHi,
+                          ),
+                      ],
+                    ),
+                  ],
                   if ((note.body ?? '').trim().isNotEmpty) ...[
                     const SizedBox(height: 20),
                     _noteBody(note),
+                  ],
+                  if (outgoing.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    Text('LINKS FROM THIS NOTE',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                            color: Ink0.muted)),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        for (final link in outgoing)
+                          ActionChip(
+                            key: Key('note-link-${link.target}'),
+                            avatar: Icon(
+                                link.isTask
+                                    ? Icons.check_circle_outline
+                                    : Icons.link,
+                                size: 15),
+                            label: Text(link.target),
+                            onPressed: () => _follow(context, link),
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (backlinks.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    Text('LINKED FROM',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                            color: Ink0.muted)),
+                    const SizedBox(height: 4),
+                    for (final link in backlinks)
+                      ListTile(
+                        key: Key('backlink-${link.sourceId}'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          link.sourceIsTask
+                              ? Icons.check_circle_outline
+                              : Icons.sticky_note_2_outlined,
+                          size: 18,
+                          color: Ink0.muted,
+                        ),
+                        title: Text(link.sourceTitle,
+                            style: TextStyle(fontSize: 13, color: Ink0.text)),
+                        onTap: () => _followBacklink(context, link),
+                      ),
                   ],
                   if (note.hasAttachments) ...[
                     const SizedBox(height: 22),

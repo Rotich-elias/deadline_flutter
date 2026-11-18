@@ -33,7 +33,7 @@ final _namedDayMonth = RegExp(
     r'\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+(\d{4}))?(?!\w)',
     caseSensitive: false);
 final _monthDay = RegExp(
-    r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+(\d{4}))?(?!\w)',
+    r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:\s+(\d{4}))?(?!\w)',
     caseSensitive: false);
 final _relative = RegExp(
     r'\b(today|tomorrow|tonight|next\s+week|in\s+\d+\s+days?)\b',
@@ -94,7 +94,12 @@ int _expandYear(int value, int reference) => value < 100 ? 2000 + value : value;
 
 // DateTime silently rolls 30 February into March, so check the round trip.
 DateTime? _safeDate(int year, int month, int day) {
-  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31) {
+  if (year < 1 ||
+      year > 9999 ||
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31) {
     return null;
   }
   try {
@@ -241,7 +246,7 @@ class NaturalSchedule {
         final days = int.parse(RegExp(r'\d+').firstMatch(phrase)!.group(0)!);
         date = DateTime(at.year, at.month, at.day + days);
       }
-      if (date != null) hasExplicitDate = true;
+      hasExplicitDate = true;
       work = _remove(work, match);
     }
 
@@ -290,7 +295,9 @@ class NaturalSchedule {
     DateTime? due;
     if (hasExplicitDate && date != null) {
       due = DateTime(date.year, date.month, date.day, hour, minute);
-    } else if (weekdayTarget != null && weekdayTarget >= 1 && weekdayTarget <= 7) {
+    } else if (weekdayTarget != null &&
+        weekdayTarget >= 1 &&
+        weekdayTarget <= 7) {
       var days = weekdayTarget - at.weekday;
       if (weekdayIsNext && days <= 0) days += 7;
       if (days < 0) days += 7;

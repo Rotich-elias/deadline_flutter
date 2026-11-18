@@ -4,7 +4,9 @@ import 'package:intl/intl.dart';
 import '../models/task.dart';
 import '../models/task_comment.dart';
 import '../theme.dart';
+import '../utils/nlp_schedule.dart';
 import '../utils/smart_extract.dart';
+import 'label_editor.dart';
 
 /// Returns the saved task, or null if the sheet was dismissed.
 /// Pass [existing] to edit; leave it out to create. [existingTags] powers
@@ -18,6 +20,7 @@ Future<Task?> showTaskForm(
   List<String> existingTags = const [],
   DateTime? initialDue,
   bool collaborationEnabled = false,
+  List<String> existingLabels = const [],
 }) {
   return showModalBottomSheet<Task>(
     context: context,
@@ -31,6 +34,7 @@ Future<Task?> showTaskForm(
       existingTags: existingTags,
       initialDue: initialDue,
       collaborationEnabled: collaborationEnabled,
+      existingLabels: existingLabels,
     ),
   );
 }
@@ -41,11 +45,13 @@ class _TaskForm extends StatefulWidget {
     required this.existingTags,
     this.initialDue,
     this.collaborationEnabled = false,
+    this.existingLabels = const [],
   });
   final Task? existing;
   final List<String> existingTags;
   final DateTime? initialDue;
   final bool collaborationEnabled;
+  final List<String> existingLabels;
 
   @override
   State<_TaskForm> createState() => _TaskFormState();
@@ -58,8 +64,16 @@ class _TaskFormState extends State<_TaskForm> {
       TextEditingController(text: widget.existing?.notes ?? '');
   late final TextEditingController _tag =
       TextEditingController(text: widget.existing?.tag ?? '');
+  late final TextEditingController _categoryController =
+      TextEditingController(text: widget.existing?.category ?? '');
   late DateTime _due =
       widget.existing?.dueLocal ?? widget.initialDue ?? _defaultDue();
+  late DateTime? _startAt = widget.existing?.startAt;
+  late List<String> _labels = [...?widget.existing?.labels];
+  late String? _category = widget.existing?.category;
+  late LocationAlert? _locationAlert = widget.existing?.locationAlert;
+  bool _autoSchedule = true;
+  late bool _dueTouched = widget.initialDue != null || widget.existing != null;
   late Repeat _repeat = widget.existing?.repeat ?? Repeat.none;
   late Priority _priority = widget.existing?.priority ?? Priority.none;
   late final Set<int> _reminders =
@@ -90,6 +104,7 @@ class _TaskFormState extends State<_TaskForm> {
     _title.dispose();
     _notes.dispose();
     _tag.dispose();
+    _categoryController.dispose();
     _assignee.dispose();
     _commentAuthor.dispose();
     _commentBody.dispose();
@@ -149,7 +164,10 @@ class _TaskFormState extends State<_TaskForm> {
       if (draft.title.isNotEmpty) _title.text = draft.title;
       if (draft.notes != null) _notes.text = draft.notes!;
       if (draft.tag != null) _tag.text = draft.tag!;
-      if (draft.due != null) _due = draft.due!;
+      if (draft.due != null) {
+        _due = draft.due!;
+        _dueTouched = true;
+      }
       for (final row in _checklist) {
         row.dispose();
       }
@@ -163,6 +181,139 @@ class _TaskFormState extends State<_TaskForm> {
     });
   }
 
+  /// Reads a due date (and optional tag/checklist) straight out of the title,
+  /// Word/Things-style: "Finish report Friday 5pm". Runs on demand and on save
+  /// for new tasks, but never overrides a date the user picked by hand.
+  void _applyAutoScheduleFromTitle() {
+    final parsed = NaturalSchedule.parse(_title.text);
+    if (parsed == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No date or time found in the title.'),
+      ));
+      return;
+    }
+    setState(() {
+      _title.text = parsed.title;
+      if (!_dueTouched && parsed.dueLocal != null) _due = parsed.dueLocal!;
+      if (parsed.tag != null && _tag.text.isEmpty) _tag.text = parsed.tag!;
+      for (final row in _checklist) {
+        row.dispose();
+      }
+      _checklist
+        ..clear()
+        ..addAll([
+          for (final step in parsed.checklist)
+            _ChecklistRow()..controller.text = step,
+        ]);
+      _error = null;
+    });
+  }
+
+  Future<void> _pickStart() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _startAt ?? _due,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+    );
+    if (d == null) return;
+    setState(() => _startAt = DateTime(d.year, d.month, d.day, 9));
+  }
+
+  Future<void> _pickLocation() async {
+    final label = TextEditingController(text: _locationAlert?.label ?? '');
+    final lat = TextEditingController(
+        text: _locationAlert?.latitude.toStringAsFixed(5) ?? '');
+    final lon = TextEditingController(
+        text: _locationAlert?.longitude.toStringAsFixed(5) ?? '');
+    final radius = TextEditingController(
+        text: (_locationAlert?.radiusMeters ?? 200).toStringAsFixed(0));
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Location reminder'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: label,
+                decoration:
+                    const InputDecoration(hintText: 'Place — e.g. Campus'),
+                autofocus: true,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: lat,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(hintText: 'Latitude'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: lon,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(hintText: 'Longitude'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: radius,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(hintText: 'Radius in metres'),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You can copy latitude/longitude from any map app. The alert '
+                'fires when Android detects you arriving near this place.',
+                style: TextStyle(fontSize: 11, color: Ink0.muted),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          if (_locationAlert != null)
+            TextButton(
+              onPressed: () {
+                setState(() => _locationAlert = null);
+                Navigator.pop(context, false);
+              },
+              child: const Text('Remove'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result != true || !mounted) return;
+    final latitude = double.tryParse(lat.text);
+    final longitude = double.tryParse(lon.text);
+    if (latitude == null || longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Enter a valid latitude and longitude.'),
+      ));
+      return;
+    }
+    setState(() => _locationAlert = LocationAlert(
+          label: label.text.trim().isEmpty ? 'Saved place' : label.text.trim(),
+          latitude: latitude,
+          longitude: longitude,
+          radiusMeters: double.tryParse(radius.text) ?? 200,
+        ));
+  }
+
   Future<void> _pickDate() async {
     final d = await showDatePicker(
       context: context,
@@ -171,8 +322,10 @@ class _TaskFormState extends State<_TaskForm> {
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
     );
     if (d == null) return;
-    setState(
-        () => _due = DateTime(d.year, d.month, d.day, _due.hour, _due.minute));
+    setState(() {
+      _due = DateTime(d.year, d.month, d.day, _due.hour, _due.minute);
+      _dueTouched = true;
+    });
   }
 
   Future<void> _pickTime() async {
@@ -181,11 +334,16 @@ class _TaskFormState extends State<_TaskForm> {
       initialTime: TimeOfDay.fromDateTime(_due),
     );
     if (t == null) return;
-    setState(() =>
-        _due = DateTime(_due.year, _due.month, _due.day, t.hour, t.minute));
+    setState(() {
+      _due = DateTime(_due.year, _due.month, _due.day, t.hour, t.minute);
+      _dueTouched = true;
+    });
   }
 
-  void _quick(DateTime when) => setState(() => _due = when);
+  void _quick(DateTime when) => setState(() {
+        _due = when;
+        _dueTouched = true;
+      });
 
   void _toggleReminder(int minutes) {
     setState(() {
@@ -198,11 +356,30 @@ class _TaskFormState extends State<_TaskForm> {
   }
 
   void _submit() {
-    final title = _title.text.trim();
+    var title = _title.text.trim();
     if (title.isEmpty) {
       setState(
           () => _error = 'Give the task a name so you recognise it later.');
       return;
+    }
+    if (_autoSchedule && widget.existing == null && !_dueTouched) {
+      final parsed = NaturalSchedule.parse(title);
+      if (parsed != null) {
+        title = parsed.title;
+        if (parsed.dueLocal != null) _due = parsed.dueLocal!;
+        if (parsed.tag != null && _tag.text.trim().isEmpty) {
+          _tag.text = parsed.tag!;
+        }
+        for (final row in _checklist) {
+          row.dispose();
+        }
+        _checklist
+          ..clear()
+          ..addAll([
+            for (final step in parsed.checklist)
+              _ChecklistRow()..controller.text = step,
+          ]);
+      }
     }
     final notes = _notes.text.trim();
     final tag = _tag.text.trim();
@@ -220,6 +397,10 @@ class _TaskFormState extends State<_TaskForm> {
             checklist: _checklistItems(),
             assignedTo: assignedTo.isEmpty ? null : assignedTo,
             comments: _comments,
+            startAt: _startAt,
+            labels: _labels,
+            category: _category,
+            locationAlert: _locationAlert,
           )
         : widget.existing!.copyWith(
             title: title,
@@ -234,6 +415,13 @@ class _TaskFormState extends State<_TaskForm> {
             clearAssignedTo: assignedTo.isEmpty,
             assignedTo: assignedTo,
             comments: _comments,
+            startAt: _startAt,
+            clearStartAt: _startAt == null,
+            labels: _labels,
+            category: _category,
+            clearCategory: _category == null,
+            locationAlert: _locationAlert,
+            clearLocationAlert: _locationAlert == null,
           );
     Navigator.of(context).pop(result);
   }
@@ -292,6 +480,33 @@ class _TaskFormState extends State<_TaskForm> {
                   style: const TextStyle(
                       color: Color(0xFFFF6B6B), fontSize: 12.5)),
             ],
+            if (!editing) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Checkbox(
+                      value: _autoSchedule,
+                      onChanged: (v) =>
+                          setState(() => _autoSchedule = v ?? false),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Auto-schedule from title (e.g. "Report Friday 5pm")',
+                      style: TextStyle(fontSize: 12, color: Ink0.muted),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _applyAutoScheduleFromTitle,
+                    child: const Text('Apply now'),
+                  ),
+                ],
+              ),
+            ],
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
@@ -335,6 +550,31 @@ class _TaskFormState extends State<_TaskForm> {
                 ],
               ),
             ],
+            const SizedBox(height: 14),
+            Text('Labels',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Ink0.muted,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            LabelEditor(
+              labels: _labels,
+              suggestions: widget.existingLabels,
+              onChanged: (next) => setState(() => _labels = next),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _categoryController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                hintText: 'Category / project — e.g. University',
+                prefixIcon: Icon(Icons.folder_outlined, size: 18),
+                isDense: true,
+              ),
+              onChanged: (value) =>
+                  _category = value.trim().isEmpty ? null : value.trim(),
+            ),
             const SizedBox(height: 18),
             Row(
               children: [
@@ -359,6 +599,7 @@ class _TaskFormState extends State<_TaskForm> {
                 child: Row(
                   children: [
                     Checkbox(
+                      key: Key('task-checklist-box-$i'),
                       value: _checklist[i].done,
                       onChanged: (value) =>
                           setState(() => _checklist[i].done = value ?? false),
@@ -462,6 +703,49 @@ class _TaskFormState extends State<_TaskForm> {
                       _quick(today.add(const Duration(days: 7, hours: 17))),
                 ),
               ],
+            ),
+            const SizedBox(height: 14),
+            Text('Start date (optional)',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Ink0.muted,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _PickerButton(
+                    icon: Icons.play_arrow_rounded,
+                    label: _startAt == null
+                        ? 'No scheduled start'
+                        : DateFormat('EEE d MMM y').format(_startAt!.toLocal()),
+                    onTap: _pickStart,
+                  ),
+                ),
+                if (_startAt != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: 'Clear start date',
+                    onPressed: () => setState(() => _startAt = null),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text('Location reminder (optional)',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Ink0.muted,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            _PickerButton(
+              icon: Icons.place_outlined,
+              label: _locationAlert == null
+                  ? 'Alert me when I arrive somewhere'
+                  : '${_locationAlert!.label} · '
+                      '${_locationAlert!.radiusMeters.round()} m',
+              onTap: _pickLocation,
             ),
             const SizedBox(height: 18),
             Text('Repeats',

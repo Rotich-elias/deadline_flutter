@@ -42,6 +42,15 @@ class SyncController extends Controller
             'changes.*.comments.*.author' => ['required', 'string', 'max:255'],
             'changes.*.comments.*.body' => ['required', 'string', 'max:10000'],
             'changes.*.comments.*.created_at' => ['required', 'date'],
+            'changes.*.category' => ['nullable', 'string', 'max:255'],
+            'changes.*.start_at' => ['nullable', 'date'],
+            'changes.*.labels' => ['nullable', 'array'],
+            'changes.*.labels.*' => ['string', 'max:255'],
+            'changes.*.location_alert' => ['nullable', 'array'],
+            'changes.*.location_alert.latitude' => ['required_with:changes.*.location_alert', 'numeric'],
+            'changes.*.location_alert.longitude' => ['required_with:changes.*.location_alert', 'numeric'],
+            'changes.*.location_alert.radius_meters' => ['nullable', 'numeric', 'min:10'],
+            'changes.*.location_alert.label' => ['nullable', 'string', 'max:255'],
             'changes.*.updated_at' => ['required', 'date'],
         ]);
 
@@ -77,6 +86,12 @@ class SyncController extends Controller
                         'checklist' => $change['checklist'] ?? [],
                         'assigned_to' => $change['assigned_to'] ?? null,
                         'comments' => $change['comments'] ?? [],
+                        'category' => $change['category'] ?? null,
+                        'start_at' => isset($change['start_at'])
+                            ? Carbon::parse($change['start_at'])->utc()
+                            : null,
+                        'labels' => $change['labels'] ?? [],
+                        'location_alert' => $change['location_alert'] ?? [],
                         'updated_at' => $incomingAt,
                         'created_at' => $existing?->created_at ?? Carbon::now('UTC'),
                         'synced_at' => $serverTime,

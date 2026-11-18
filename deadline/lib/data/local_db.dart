@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -14,7 +16,7 @@ class LocalDb {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'deadline.db'),
-      version: 9,
+      version: 10,
       onCreate: (d, _) async {
         await d.execute('''
           CREATE TABLE tasks (
@@ -34,7 +36,11 @@ class LocalDb {
             priority    INTEGER NOT NULL DEFAULT 0,
             checklist   TEXT NOT NULL DEFAULT '[]',
             assigned_to TEXT,
-            comments    TEXT NOT NULL DEFAULT '[]'
+            comments    TEXT NOT NULL DEFAULT '[]',
+            start_at    INTEGER,
+            labels      TEXT NOT NULL DEFAULT '[]',
+            category    TEXT,
+            location_alert TEXT
           )
         ''');
         await d.execute('CREATE INDEX idx_tasks_due ON tasks(due_at)');
@@ -44,6 +50,7 @@ class LocalDb {
             'CREATE INDEX idx_tasks_pinned ON tasks(pinned, done, due_at)');
         await d.execute(
             'CREATE INDEX idx_tasks_archived ON tasks(deleted, archived_at)');
+        await d.execute('CREATE INDEX idx_tasks_category ON tasks(category)');
         await _createNotesTable(d);
       },
       onUpgrade: (d, oldVersion, newVersion) async {
@@ -109,6 +116,20 @@ class LocalDb {
           await d.execute(
               "ALTER TABLE tasks ADD COLUMN comments TEXT NOT NULL DEFAULT '[]'");
         }
+        if (oldVersion < 10) {
+          // Start dates, multiple labels, categories/notebooks and place alerts
+          // all default to empty so existing rows keep working unchanged.
+          await d.execute('ALTER TABLE tasks ADD COLUMN start_at INTEGER');
+          await d.execute(
+              "ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'");
+          await d.execute('ALTER TABLE tasks ADD COLUMN category TEXT');
+          await d.execute('ALTER TABLE tasks ADD COLUMN location_alert TEXT');
+          await d.execute('CREATE INDEX idx_tasks_category ON tasks(category)');
+          await d.execute(
+              "ALTER TABLE notes ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'");
+          await d.execute('ALTER TABLE notes ADD COLUMN notebook TEXT');
+          await d.execute('CREATE INDEX idx_notes_notebook ON notes(notebook)');
+        }
       },
     );
   }
@@ -126,7 +147,9 @@ class LocalDb {
         archived_at INTEGER,
         locked      INTEGER NOT NULL DEFAULT 0,
         pinned      INTEGER NOT NULL DEFAULT 0,
-        attachments TEXT NOT NULL DEFAULT '[]'
+        attachments TEXT NOT NULL DEFAULT '[]',
+        labels      TEXT NOT NULL DEFAULT '[]',
+        notebook    TEXT
       )
     ''');
     await d.execute('CREATE INDEX idx_notes_dirty ON notes(dirty)');
@@ -136,6 +159,60 @@ class LocalDb {
         .execute('CREATE INDEX idx_notes_pinned ON notes(pinned, updated_at)');
     await d.execute(
         'CREATE INDEX idx_notes_archived ON notes(deleted, archived_at)');
+    await d.execute('CREATE INDEX idx_notes_notebook ON notes(notebook)');
+  }
+
+  /// All labels in use, across both tasks and notes, alphabetical.
+  Future<List<String>> distinctLabels() async {
+    // Tests and early startup can use a store before the database is open.
+    if (_db == null) return const [];
+    final taskRows = await db.query('tasks',
+        distinct: true,
+        columns: ['labels'],
+        where: "deleted = 0 AND labels IS NOT NULL AND labels != '[]'");
+    final noteRows = await db.query('notes',
+        distinct: true,
+        columns: ['labels'],
+        where:
+            "deleted = 0 AND locked = 0 AND labels IS NOT NULL AND labels != '[]'");
+    final labels = <String>{};
+    for (final row in [...taskRows, ...noteRows]) {
+      final raw = row['labels'];
+      if (raw is! String) continue;
+      try {
+        for (final value in jsonDecode(raw) as Iterable) {
+          final label = value.toString().trim();
+          if (label.isNotEmpty) labels.add(label);
+        }
+      } catch (_) {
+        // Ignore a corrupt row rather than losing the whole filter.
+      }
+    }
+    final result = labels.toList()..sort();
+    return result;
+  }
+
+  /// Categories used by tasks, for the project filter.
+  Future<List<String>> distinctCategories() async {
+    if (_db == null) return const [];
+    final rows = await db.query('tasks',
+        distinct: true,
+        columns: ['category'],
+        where: "deleted = 0 AND category IS NOT NULL AND category != ''",
+        orderBy: 'category COLLATE NOCASE ASC');
+    return rows.map((r) => r['category'] as String).toList();
+  }
+
+  /// Notebooks used by notes, for the notebook filter.
+  Future<List<String>> distinctNotebooks() async {
+    if (_db == null) return const [];
+    final rows = await db.query('notes',
+        distinct: true,
+        columns: ['notebook'],
+        where:
+            "deleted = 0 AND locked = 0 AND notebook IS NOT NULL AND notebook != ''",
+        orderBy: 'notebook COLLATE NOCASE ASC');
+    return rows.map((r) => r['notebook'] as String).toList();
   }
 
   /// Live tasks, pinned first, then soonest deadline. Completed ones sink to

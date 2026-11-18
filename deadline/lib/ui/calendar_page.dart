@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../data/task_store.dart';
 import '../models/task.dart';
+import '../services/platform_bridge.dart';
 import '../theme.dart';
 import '../utils/calendar.dart';
 import '../utils/urgency.dart';
@@ -61,6 +62,131 @@ class _CalendarPageState extends State<CalendarPage> {
     if (created != null) await widget.store.add(created);
   }
 
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Push local deadlines into the phone's calendar. Only the title/time and
+  /// a one-hour slot are written; edits inside the calendar stay there, and
+  /// the local task remains the source of truth for reminders and urgency.
+  Future<void> _exportToDevice() async {
+    final tasks = widget.store.tasks
+        .where((t) => !t.deleted && !t.done)
+        .toList(growable: false);
+    var sent = 0;
+    for (final task in tasks) {
+      if (await PlatformBridge.addCalendarEvent(
+        title: task.title,
+        start: task.dueLocal,
+      )) {
+        sent++;
+      }
+    }
+    _say(sent == 0
+        ? 'No deadlines were added. Check calendar permission.'
+        : 'Added $sent deadline${sent == 1 ? '' : 's'} to your calendar.');
+  }
+
+  /// Pull device events for the displayed month into the app, skipping ones
+  /// that already have a deadline with the same title and start time.
+  Future<void> _importFromDevice() async {
+    // Capture the navigator before the first await. The picker below is shown
+    // through it, so no BuildContext is carried across an async gap.
+    final navigator = Navigator.of(context);
+    final from = DateTime(_month.year, _month.month, 1);
+    final to = DateTime(_month.year, _month.month + 1, 0, 23, 59);
+    final events = await PlatformBridge.calendarEvents(from: from, to: to);
+    if (events.isEmpty) {
+      _say('No events found in the device calendar for this month.');
+      return;
+    }
+    final existing = widget.store.tasks;
+    final fresh = events.where((event) {
+      final title = '${event['title'] ?? ''}'.trim();
+      final ms = event['start'];
+      if (title.isEmpty || ms is! int) return false;
+      final start = DateTime.fromMillisecondsSinceEpoch(ms);
+      return !existing.any((task) =>
+          task.title == title &&
+          task.dueLocal.year == start.year &&
+          task.dueLocal.month == start.month &&
+          task.dueLocal.day == start.day &&
+          task.dueLocal.hour == start.hour &&
+          task.dueLocal.minute == start.minute);
+    }).toList(growable: false);
+    if (fresh.isEmpty) {
+      _say('Those events are already in your deadlines.');
+      return;
+    }
+
+    final picked = <bool>[for (final _ in fresh) true];
+    final chosen = await navigator.push<List<int>>(
+      PageRouteBuilder<List<int>>(
+        opaque: false,
+        barrierDismissible: true,
+        barrierColor: Colors.black54,
+        pageBuilder: (_, __, ___) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            backgroundColor: Ink0.surface,
+            title: const Text('Import calendar events'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: fresh.length,
+                itemBuilder: (_, index) {
+                  final event = fresh[index];
+                  final start = DateTime.fromMillisecondsSinceEpoch(
+                      event['start'] as int);
+                  return CheckboxListTile(
+                    key: Key('calendar-import-$index'),
+                    dense: true,
+                    value: picked[index],
+                    title: Text('${event['title'] ?? '(untitled)'}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(DateFormat('d MMM, h:mm a').format(start)),
+                    onChanged: (value) =>
+                        setDialogState(() => picked[index] = value ?? false),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(
+                  dialogContext,
+                  [
+                    for (var i = 0; i < picked.length; i++)
+                      if (picked[i]) i,
+                  ],
+                ),
+                child: const Text('Import'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (chosen == null || chosen.isEmpty) return;
+    for (final index in chosen) {
+      final event = fresh[index];
+      final start = DateTime.fromMillisecondsSinceEpoch(event['start'] as int);
+      await widget.store.add(Task.create(
+        title: '${event['title'] ?? 'Calendar event'}',
+        dueAtLocal: start,
+        notes: 'Imported from the device calendar.',
+      ));
+    }
+    _say('Imported ${chosen.length} event${chosen.length == 1 ? '' : 's'}.');
+  }
+
   @override
   Widget build(BuildContext context) {
     final today = startOfDay(DateTime.now());
@@ -111,6 +237,24 @@ class _CalendarPageState extends State<CalendarPage> {
                       TextButton(
                         onPressed: _goToday,
                         child: const Text('Today'),
+                      ),
+                      PopupMenuButton<String>(
+                        tooltip: 'Device calendar sync',
+                        icon: const Icon(Icons.sync),
+                        onSelected: (value) {
+                          if (value == 'export') _exportToDevice();
+                          if (value == 'import') _importFromDevice();
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'import',
+                            child: Text('Import events for this month'),
+                          ),
+                          PopupMenuItem(
+                            value: 'export',
+                            child: Text('Export deadlines to device'),
+                          ),
+                        ],
                       ),
                     ],
                   ),

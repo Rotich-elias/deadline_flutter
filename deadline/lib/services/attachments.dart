@@ -138,6 +138,26 @@ class AttachmentService {
     );
   }
 
+  /// Import a file created by the in-app camera/voice recorder. Those paths
+  /// come from the native bridge rather than the file picker, but both end up
+  /// in the same app-owned attachment directory.
+  Future<NoteAttachment> importPath(
+    String noteId,
+    String path, {
+    String? name,
+  }) async {
+    final file = File(path);
+    if (!await file.exists()) throw const AttachmentReadException();
+    return importFile(
+      noteId,
+      PlatformFile(
+        name: name ?? p.basename(path),
+        size: await file.length(),
+        path: path,
+      ),
+    );
+  }
+
   Future<bool> exists(NoteAttachment attachment) async {
     final path = attachment.localPath;
     if (path == null) return false;

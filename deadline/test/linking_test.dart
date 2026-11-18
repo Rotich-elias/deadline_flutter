@@ -22,14 +22,14 @@ void main() {
       expect(links, hasLength(2));
       expect(links.first.target, 'Exact Note Title');
       expect(links.first.isTask, isFalse);
-      final noteToken = '[[Exact Note Title]]';
+      const noteToken = '[[Exact Note Title]]';
       expect(links.first.start, text.indexOf(noteToken));
       expect(links.first.end, text.indexOf(noteToken) + noteToken.length);
       expect(text.substring(links.first.start, links.first.end), noteToken);
 
       expect(links.last.target, 'Pay rent');
       expect(links.last.isTask, isTrue);
-      final taskToken = '[[tasks:Pay rent]]';
+      const taskToken = '[[tasks:Pay rent]]';
       expect(text.substring(links.last.start, links.last.end), taskToken);
       expect(links.last.end, links.last.start + taskToken.length);
     });
@@ -124,7 +124,8 @@ void main() {
       final index = BacklinkIndex(
         [_note('n1', 'Budget note', body: '[[tasks:Pay rent]]')],
         [
-          _task('t1', 'Pay rent', notes: 'See [[Budget]] and [[tasks:Pay rent]]'),
+          _task('t1', 'Pay rent',
+              notes: 'See [[Budget]] and [[tasks:Pay rent]]'),
         ],
       );
 

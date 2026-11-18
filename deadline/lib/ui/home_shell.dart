@@ -8,6 +8,7 @@ import '../sync/sync_service.dart';
 import '../theme.dart';
 import 'calendar_page.dart';
 import 'my_day_page.dart';
+import 'note_form_sheet.dart';
 import 'notes_list_page.dart';
 import 'powered_by_footer.dart';
 import 'task_list_page.dart';
@@ -24,6 +25,7 @@ class HomeShell extends StatefulWidget {
     required this.sync,
     required this.appTheme,
     required this.appLock,
+    this.quickNote = false,
   });
 
   final TaskStore store;
@@ -32,6 +34,9 @@ class HomeShell extends StatefulWidget {
   final AppTheme appTheme;
   final AppLockService appLock;
 
+  /// True when this launch came from the "Quick note" home-screen shortcut.
+  final bool quickNote;
+
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
@@ -39,19 +44,53 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   bool _draining = false;
+  late bool _pendingQuickNote = widget.quickNote;
+  late int _seenQuickNoteRequests = SharedNotesInbox.instance.quickNoteRequests;
 
   @override
   void initState() {
     super.initState();
-    SharedNotesInbox.instance.addListener(_drainSharedNotes);
+    SharedNotesInbox.instance.addListener(_onInboxChanged);
     SharedNotesInbox.instance.start();
     _drainSharedNotes();
+    widget.appLock.addListener(_onLockChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeOpenQuickNote());
   }
 
   @override
   void dispose() {
-    SharedNotesInbox.instance.removeListener(_drainSharedNotes);
+    SharedNotesInbox.instance.removeListener(_onInboxChanged);
+    widget.appLock.removeListener(_onLockChanged);
     super.dispose();
+  }
+
+  void _onLockChanged() => _maybeOpenQuickNote();
+
+  /// The shortcut opens a blank note, but only after the user has passed the
+  /// app-lock gate. Pending shares are drained first by initState.
+  Future<void> _maybeOpenQuickNote() async {
+    if (!_pendingQuickNote || !mounted) return;
+    if (widget.appLock.enabled && widget.appLock.locked) return;
+    _pendingQuickNote = false;
+    setState(() => _index = 1);
+    final note = await showNoteForm(
+      context,
+      existingTags: widget.notesStore.tags,
+      existingLabels: widget.notesStore.labels,
+    );
+    if (note != null) await widget.notesStore.add(note);
+  }
+
+  /// The launcher shortcut also works while the app is already running: native
+  /// pushes a `quickNote` event, which arrives here through the shared inbox.
+  void _onInboxChanged() {
+    _drainSharedNotes();
+    final requests = SharedNotesInbox.instance.quickNoteRequests;
+    if (requests > _seenQuickNoteRequests) {
+      _seenQuickNoteRequests = requests;
+      _pendingQuickNote = true;
+    }
+    _maybeOpenQuickNote();
   }
 
   /// Imports notes shared in from another app (Samsung Notes' "Text file"

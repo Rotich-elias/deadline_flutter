@@ -26,6 +26,11 @@ class SharedNotesInbox extends ChangeNotifier {
   final List<SharedNote> _pending = [];
   bool _listening = false;
 
+  /// Number of "Quick note" shortcut requests seen since startup. A launcher
+  /// shortcut can arrive while the app is already open, so the UI watches this
+  /// counter as well as the cold-start flag.
+  int quickNoteRequests = 0;
+
   /// Starts listening for shares and drains anything that arrived while the
   /// app was starting. Safe to call more than once.
   Future<void> start() async {
@@ -33,6 +38,10 @@ class SharedNotesInbox extends ChangeNotifier {
       _listening = true;
       _channel.setMethodCallHandler((call) async {
         if (call.method == 'sharedNotes') await pull();
+        if (call.method == 'quickNote') {
+          quickNoteRequests++;
+          notifyListeners();
+        }
         return null;
       });
     }

@@ -79,7 +79,11 @@ void main() {
 
       await tester.enterText(title, 'Edited title');
       await tester.enterText(body, '- edited step');
-      await tester.tap(find.text('Add note'));
+      await tester.pumpAndSettle();
+      final save = find.text('Add note');
+      await tester.ensureVisible(save);
+      await tester.pumpAndSettle();
+      await tester.tap(save);
       await tester.pumpAndSettle();
 
       expect(saved, isNotNull);

@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/task.dart';
 import '../models/task_comment.dart';
+import '../services/activity_log.dart';
 import '../services/home_widget_service.dart';
+import '../services/location_alerts.dart';
 import '../services/notifications.dart';
 import '../utils/search.dart';
 import '../utils/urgency.dart';
@@ -36,6 +38,27 @@ class TaskStore extends ChangeNotifier {
   List<String> tags = [];
   String? tagFilter;
 
+  /// All labels in use (tasks and notes), plus the active multi-label filter.
+  List<String> labels = [];
+  String? labelFilter;
+
+  /// Project/category filtering.
+  List<String> categories = [];
+  String? categoryFilter;
+
+  ActivityLog? _activityLog;
+  Future<ActivityLog> get activityLog async =>
+      _activityLog ??= await ActivityLog.instance();
+
+  Future<void> _log(String action, {String? detail, String? entityId}) async {
+    try {
+      await (await activityLog)
+          .record(action, detail: detail, entityId: entityId);
+    } catch (_) {
+      // The audit trail must never block a user action.
+    }
+  }
+
   /// Free-text filter for the deadline list. Empty means "show everything".
   String query = '';
 
@@ -55,6 +78,40 @@ class TaskStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLabelFilter(String? label) {
+    labelFilter = label;
+    notifyListeners();
+  }
+
+  void setCategoryFilter(String? category) {
+    categoryFilter = category;
+    notifyListeners();
+  }
+
+  Future<void> setLabels(Task t, List<String> next) {
+    final clean = next.map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    return save(t.copyWith(labels: clean));
+  }
+
+  Future<void> setCategory(Task t, String? category) {
+    final clean = category?.trim();
+    if (clean == t.category || (clean?.isEmpty ?? true)) {
+      return clean == null || clean.isEmpty
+          ? save(t.copyWith(clearCategory: true))
+          : Future.value();
+    }
+    return save(t.copyWith(category: clean));
+  }
+
+  Future<void> setStartAt(Task t, DateTime? start) => save(start == null
+      ? t.copyWith(clearStartAt: true)
+      : t.copyWith(startAt: start.toUtc()));
+
+  Future<void> setLocationAlert(Task t, LocationAlert? alert) =>
+      save(alert == null
+          ? t.copyWith(clearLocationAlert: true)
+          : t.copyWith(locationAlert: alert));
+
   void setQuery(String value) {
     final next = value.trim();
     if (next == query) return;
@@ -67,6 +124,12 @@ class TaskStore extends ChangeNotifier {
     if (tagFilter != null) {
       list = list.where((t) => t.tag == tagFilter).toList();
     }
+    if (labelFilter != null) {
+      list = list.where((t) => t.labels.contains(labelFilter)).toList();
+    }
+    if (categoryFilter != null) {
+      list = list.where((t) => t.category == categoryFilter).toList();
+    }
     if (query.isNotEmpty) {
       list = filterByQuery(
           list,
@@ -75,6 +138,8 @@ class TaskStore extends ChangeNotifier {
                 t.title,
                 t.notes,
                 t.tag,
+                t.category,
+                ...t.labels,
                 ...t.checklist.map((item) => item.title),
               ]);
     }
@@ -107,7 +172,15 @@ class TaskStore extends ChangeNotifier {
     _tasks = await _db.all();
     _archived = await _db.archivedTasks();
     tags = await _db.distinctTags();
+    labels = await _db.distinctLabels();
+    categories = await _db.distinctCategories();
     if (tagFilter != null && !tags.contains(tagFilter)) tagFilter = null;
+    if (labelFilter != null && !labels.contains(labelFilter)) {
+      labelFilter = null;
+    }
+    if (categoryFilter != null && !categories.contains(categoryFilter)) {
+      categoryFilter = null;
+    }
     notifyListeners();
     unawaited(_refreshDigest());
     unawaited(HomeWidgetService.update(_tasks));
@@ -147,16 +220,37 @@ class TaskStore extends ChangeNotifier {
     );
   }
 
+  /// Keep the native proximity alert aligned with the saved task. Failures are
+  /// swallowed by [LocationAlerts] so a lost permission never blocks a save.
+  Future<void> _syncAlert(Task? previous, Task next) async {
+    if (next.locationAlert != null) {
+      await LocationAlerts.register(next);
+    } else if (previous?.locationAlert != null) {
+      await LocationAlerts.unregister(next.id);
+    }
+  }
+
   Future<void> add(Task t) async {
     await _db.upsert(t);
     await Notifications.instance.scheduleFor(t);
+    await _syncAlert(null, t);
+    unawaited(_log('Created deadline', detail: t.title, entityId: t.id));
     await load();
     onLocalChange?.call();
   }
 
   Future<void> save(Task t) async {
+    Task? previous;
+    for (final existing in _tasks) {
+      if (existing.id == t.id) {
+        previous = existing;
+        break;
+      }
+    }
     await _db.upsert(t);
     await Notifications.instance.scheduleFor(t);
+    await _syncAlert(previous, t);
+    unawaited(_log('Updated deadline', detail: t.title, entityId: t.id));
     await load();
     onLocalChange?.call();
   }
@@ -221,6 +315,8 @@ class TaskStore extends ChangeNotifier {
     await _db.upsert(next);
     await Notifications.instance.scheduleFor(next);
 
+    unawaited(_log(next.done ? 'Completed deadline' : 'Reopened deadline',
+        detail: t.title, entityId: t.id));
     if (next.done) {
       final following = t.nextOccurrence();
       if (following != null) {
@@ -241,6 +337,8 @@ class TaskStore extends ChangeNotifier {
       archivedAt: DateTime.now().toUtc(),
     ));
     await Notifications.instance.cancelFor(t.id);
+    await LocationAlerts.unregister(t.id);
+    unawaited(_log('Archived deadline', detail: t.title, entityId: t.id));
     await load();
     onLocalChange?.call();
   }

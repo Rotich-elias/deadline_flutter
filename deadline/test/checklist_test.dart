@@ -223,7 +223,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Checklist'), findsOneWidget);
 
-      await tester.tap(find.text('Add step'));
+      final addStep = find.text('Add step');
+      await tester.ensureVisible(addStep);
+      await tester.pumpAndSettle();
+      await tester.tap(addStep);
       await tester.pumpAndSettle();
       final stepField = find.byWidgetPredicate((w) =>
           w is TextField &&
@@ -234,7 +237,15 @@ void main() {
           w.decoration?.hintText == 'e.g. ICT3052 forensics report');
       await tester.enterText(titleField, 'Test task');
       await tester.enterText(stepField, 'Collect receipts');
-      await tester.tap(find.byType(Checkbox));
+      final box = find.byKey(const Key('task-checklist-box-0'));
+      await tester.drag(
+          find.ancestor(
+            of: box,
+            matching: find.byType(SingleChildScrollView),
+          ),
+          const Offset(0, 300));
+      await tester.pumpAndSettle();
+      await tester.tap(box);
       await tester.pumpAndSettle();
       expect(find.text('1/1'), findsOneWidget);
 

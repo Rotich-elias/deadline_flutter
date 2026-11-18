@@ -175,8 +175,8 @@ class BacklinkIndex {
   List<Backlink> forTarget(String title, {required bool isTask}) {
     final key = _key(title);
     if (key.isEmpty) return const <Backlink>[];
-    return List.unmodifiable(_byTarget[_typedKey(key, isTask)] ??
-        const <Backlink>[]);
+    return List.unmodifiable(
+        _byTarget[_typedKey(key, isTask)] ?? const <Backlink>[]);
   }
 
   /// Links written in [note]'s body, in the order they appear.

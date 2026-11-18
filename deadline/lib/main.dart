@@ -7,7 +7,9 @@ import 'data/local_db.dart';
 import 'data/notes_store.dart';
 import 'data/task_store.dart';
 import 'services/app_lock_service.dart';
+import 'services/location_alerts.dart';
 import 'services/notifications.dart';
+import 'services/platform_bridge.dart';
 import 'sync/sync_service.dart';
 import 'theme.dart';
 import 'ui/app_lock_gate.dart';
@@ -36,6 +38,7 @@ class _AppDeps {
     required this.sync,
     required this.appTheme,
     required this.appLock,
+    required this.quickNote,
   });
 
   final TaskStore store;
@@ -43,6 +46,7 @@ class _AppDeps {
   final SyncService sync;
   final AppTheme appTheme;
   final AppLockService appLock;
+  final bool quickNote;
 }
 
 class DeadlineBootstrap extends StatefulWidget {
@@ -82,6 +86,8 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       await appLock.load();
       await store.load();
       await notesStore.load();
+      // Android forgets proximity alerts on reboot; rebuild them from data.
+      unawaited(LocationAlerts.syncAll(store.tasks));
       // Secure storage can be cleared independently of the database (device
       // transfer, "clear data" on some ROMs). A note lock without an app PIN
       // could never be opened again, so release any orphans. The update is a
@@ -89,6 +95,9 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       if (!appLock.enabled) await notesStore.clearAllLocks();
       await sync.loadSettings();
       await appTheme.load();
+      // Consume the launcher shortcut flag once, at startup. HomeShell waits
+      // for the lock gate to open before acting on it.
+      final quickNote = await PlatformBridge.takeQuickNote();
 
       final elapsed = DateTime.now().difference(started);
       if (elapsed < _minSplash) {
@@ -103,6 +112,7 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
           sync: sync,
           appTheme: appTheme,
           appLock: appLock,
+          quickNote: quickNote,
         );
       });
     } catch (error, stack) {
@@ -138,6 +148,7 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       sync: deps.sync,
       appTheme: deps.appTheme,
       appLock: deps.appLock,
+      quickNote: deps.quickNote,
     );
   }
 }
@@ -150,12 +161,14 @@ class DeadlineApp extends StatefulWidget {
     required this.sync,
     required this.appTheme,
     required this.appLock,
+    required this.quickNote,
   });
   final TaskStore store;
   final NotesStore notesStore;
   final SyncService sync;
   final AppTheme appTheme;
   final AppLockService appLock;
+  final bool quickNote;
 
   @override
   State<DeadlineApp> createState() => _DeadlineAppState();
@@ -256,6 +269,7 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
             sync: widget.sync,
             appTheme: widget.appTheme,
             appLock: widget.appLock,
+            quickNote: widget.quickNote,
           ),
         );
       },

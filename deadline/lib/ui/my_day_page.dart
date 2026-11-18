@@ -5,6 +5,7 @@ import '../data/task_store.dart';
 import '../models/task.dart';
 import '../theme.dart';
 import '../utils/my_day.dart';
+import '../utils/schedule_suggestions.dart';
 import '../utils/urgency.dart';
 import 'task_form_sheet.dart';
 
@@ -26,6 +27,7 @@ class _MyDayPageState extends State<MyDayPage> {
       context,
       existing: task,
       existingTags: widget.store.tags,
+      existingLabels: widget.store.labels,
     );
     if (edited != null) await widget.store.save(edited);
   }
@@ -36,9 +38,79 @@ class _MyDayPageState extends State<MyDayPage> {
     final created = await showTaskForm(
       context,
       existingTags: widget.store.tags,
+      existingLabels: widget.store.labels,
       initialDue: due,
     );
     if (created != null) await widget.store.add(created);
+  }
+
+  Future<void> _createAt(BuildContext context, DateTime start) async {
+    final created = await showTaskForm(
+      context,
+      existingTags: widget.store.tags,
+      existingLabels: widget.store.labels,
+      initialDue: start,
+    );
+    if (created != null) await widget.store.add(created);
+  }
+
+  /// Free working-hour blocks around today's commitments. The suggestion is
+  /// only a starting point: planning opens the normal task form with that time
+  /// pre-filled, so nothing is created without the user's confirmation.
+  Widget _suggestions(List<SuggestedBlock> blocks) {
+    if (blocks.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome, size: 14, color: Ink0.muted),
+              const SizedBox(width: 6),
+              Text(
+                'SUGGESTED FOCUS BLOCKS',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                  color: Ink0.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+        for (final block in blocks)
+          Card(
+            key: Key('suggested-${block.start.millisecondsSinceEpoch}'),
+            color: Ink0.surface,
+            elevation: 0,
+            margin: const EdgeInsets.symmetric(vertical: 3),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Ink0.line),
+            ),
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.schedule, size: 18),
+              title: Text(
+                block.dayIndex == 0
+                    ? 'Today, ${DateFormat('h:mm a').format(block.start)}'
+                    : DateFormat('EEE d MMM, h:mm a').format(block.start),
+                style: TextStyle(fontSize: 13, color: Ink0.text),
+              ),
+              subtitle: Text(
+                '${block.duration.inMinutes} min free · tap to plan a task here',
+                style: TextStyle(fontSize: 11.5, color: Ink0.muted),
+              ),
+              trailing: TextButton(
+                onPressed: () => _createAt(context, block.start),
+                child: const Text('Plan'),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   Widget _sectionTitle(String label, int count, Color color) {
@@ -168,6 +240,13 @@ class _MyDayPageState extends State<MyDayPage> {
           listenable: widget.store,
           builder: (context, _) {
             final groups = groupMyDay(widget.store.tasks, now: now);
+            final commitments = [...groups.overdue, ...groups.today];
+            final suggestions = ScheduleSuggestions.suggest(
+              commitments.map((t) => t.dueLocal).toList(),
+              List.filled(commitments.length, const Duration(minutes: 60)),
+              now: now,
+              limit: 3,
+            );
             final subtitle = DateFormat('EEEE, d MMM').format(now) +
                 (groups.completedToday > 0
                     ? ' · ${groups.completedToday} done today'
@@ -219,10 +298,17 @@ class _MyDayPageState extends State<MyDayPage> {
                 ),
                 Expanded(
                   child: groups.isEmpty
-                      ? _emptyState(groups)
+                      ? ListView(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 96),
+                          children: [
+                            _suggestions(suggestions),
+                            _emptyState(groups),
+                          ],
+                        )
                       : ListView(
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 96),
                           children: [
+                            _suggestions(suggestions),
                             if (groups.overdue.isNotEmpty) ...[
                               _sectionTitle('Overdue', groups.overdue.length,
                                   Urgency.overdue.color),

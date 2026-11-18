@@ -18,7 +18,9 @@ class Task extends Model
     protected $fillable = [
         'id', 'user_id', 'title', 'notes', 'tag',
         'due_at', 'done', 'deleted', 'repeat', 'pinned', 'priority',
-        'checklist', 'assigned_to', 'comments', 'updated_at', 'created_at', 'synced_at',
+        'checklist', 'assigned_to', 'comments',
+        'category', 'start_at', 'labels', 'location_alert',
+        'updated_at', 'created_at', 'synced_at',
     ];
 
     protected $casts = [
@@ -33,6 +35,9 @@ class Task extends Model
         'priority' => 'integer',
         'checklist' => 'array',
         'comments' => 'array',
+        'start_at' => 'datetime',
+        'labels' => 'array',
+        'location_alert' => 'array',
     ];
 
     public function toSyncArray(): array
@@ -51,6 +56,10 @@ class Task extends Model
             'checklist' => $this->checklist ?? [],
             'assigned_to' => $this->assigned_to,
             'comments' => $this->comments ?? [],
+            'category' => $this->category,
+            'start_at' => $this->start_at?->toIso8601String(),
+            'labels' => $this->labels ?? [],
+            'location_alert' => $this->location_alert ?? [],
             'updated_at' => $this->updated_at->toIso8601String(),
         ];
     }

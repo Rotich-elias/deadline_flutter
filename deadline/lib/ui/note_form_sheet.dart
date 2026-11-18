@@ -6,9 +6,12 @@ import 'package:uuid/uuid.dart';
 import '../models/attachment.dart';
 import '../models/note.dart';
 import '../services/attachments.dart';
+import '../services/platform_bridge.dart';
 import '../theme.dart';
 import '../utils/list_continuation.dart';
 import '../utils/markup.dart';
+import '../utils/web_clip.dart';
+import 'label_editor.dart';
 
 /// Returns the saved note, or null if the sheet was dismissed.
 /// Pass [existing] to edit; leave it out to create. [existingTags] powers
@@ -21,6 +24,7 @@ Future<Note?> showNoteForm(
   String? initialTitle,
   String? initialBody,
   String? initialTag,
+  List<String> existingLabels = const [],
 }) {
   return showModalBottomSheet<Note>(
     context: context,
@@ -35,6 +39,7 @@ Future<Note?> showNoteForm(
       initialTitle: initialTitle,
       initialBody: initialBody,
       initialTag: initialTag,
+      existingLabels: existingLabels,
     ),
   );
 }
@@ -46,12 +51,14 @@ class _NoteForm extends StatefulWidget {
     this.initialTitle,
     this.initialBody,
     this.initialTag,
+    this.existingLabels = const [],
   });
   final Note? existing;
   final List<String> existingTags;
   final String? initialTitle;
   final String? initialBody;
   final String? initialTag;
+  final List<String> existingLabels;
 
   @override
   State<_NoteForm> createState() => _NoteFormState();
@@ -64,6 +71,9 @@ class _NoteFormState extends State<_NoteForm> {
       text: widget.existing?.body ?? widget.initialBody ?? '');
   late final TextEditingController _tag = TextEditingController(
       text: widget.existing?.tag ?? widget.initialTag ?? '');
+  late final TextEditingController _notebook =
+      TextEditingController(text: widget.existing?.notebook ?? '');
+  late List<String> _labels = [...?widget.existing?.labels];
   final _draftId = const Uuid().v4();
   final _attachments = AttachmentService();
   late final List<NoteAttachment> _files = [
@@ -73,6 +83,7 @@ class _NoteFormState extends State<_NoteForm> {
   final _removedFiles = <NoteAttachment>[];
   final _listFormatter = ListContinuationFormatter();
   bool _saved = false;
+  bool _recording = false;
 
   String? _error;
 
@@ -98,6 +109,7 @@ class _NoteFormState extends State<_NoteForm> {
     _body.removeListener(_refreshChecklistState);
     _body.dispose();
     _tag.dispose();
+    _notebook.dispose();
     super.dispose();
   }
 
@@ -179,6 +191,138 @@ class _NoteFormState extends State<_NoteForm> {
     setState(() {});
   }
 
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _appendText(String text) {
+    if (text.trim().isEmpty) return;
+    final existing = _body.text;
+    final separator = existing.trim().isEmpty
+        ? ''
+        : existing.endsWith('\n')
+            ? ''
+            : '\n\n';
+    final next = '$existing$separator$text';
+    _body.value = _body.value.copyWith(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    setState(() {});
+  }
+
+  void _insertLink() {
+    final selection = _body.selection;
+    final start = selection.start < 0 ? _body.text.length : selection.start;
+    final end = selection.end < 0 ? start : selection.end;
+    final selected = _body.text.substring(start, end).trim();
+    final insertion = selected.isEmpty ? '[[ ]]' : '[[$selected]]';
+    final next = _body.text.replaceRange(start, end, insertion);
+    final caret = selected.isEmpty ? start + 2 : start + insertion.length;
+    _body.value = _body.value.copyWith(
+      text: next,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+    setState(() {});
+  }
+
+  Future<void> _importCaptured(String path) async {
+    try {
+      final attachment = await _attachments.importPath(
+        widget.existing?.id ?? _draftId,
+        path,
+      );
+      if (!mounted) {
+        await _attachments.deleteAll([attachment]);
+        return;
+      }
+      setState(() {
+        _files.add(attachment);
+        _addedFiles.add(attachment);
+      });
+    } catch (e) {
+      _say('Could not attach the capture: $e');
+    }
+  }
+
+  Future<void> _capturePhoto() async {
+    final path = await PlatformBridge.capturePhoto();
+    if (path == null) {
+      _say('Camera is not available on this device.');
+      return;
+    }
+    await _importCaptured(path);
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_recording) {
+      final path = await PlatformBridge.stopAudioRecording();
+      if (mounted) setState(() => _recording = false);
+      if (path == null) {
+        _say('The recording could not be saved.');
+        return;
+      }
+      await _importCaptured(path);
+      return;
+    }
+    final path = await PlatformBridge.startAudioRecording();
+    if (path == null) {
+      _say('Microphone permission is needed for voice notes.');
+      return;
+    }
+    if (mounted) setState(() => _recording = true);
+  }
+
+  Future<void> _transcribe() async {
+    final text = await PlatformBridge.transcribe();
+    if (text == null || text.trim().isEmpty) {
+      _say('Nothing was recognised. Try again in a quieter place.');
+      return;
+    }
+    _appendText(text.trim());
+  }
+
+  Future<void> _clipWeb() async {
+    final urlController = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Ink0.surface,
+        title: const Text('Clip a web page'),
+        content: TextField(
+          controller: urlController,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration:
+              const InputDecoration(hintText: 'https://example.com/article'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, urlController.text),
+            child: const Text('Clip'),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.trim().isEmpty) return;
+    final clip = await WebClipper.clip(url);
+    if (clip == null) {
+      _say('Could not read that page. Check the address and connection.');
+      return;
+    }
+    final site = clip.siteName == null ? '' : '\n${clip.siteName}';
+    _appendText(
+      '${clip.title}$site\n${clip.body}\n\nSource: ${clip.url}',
+    );
+  }
+
   void _submit() {
     final title = _title.text.trim();
     if (title.isEmpty) {
@@ -197,6 +341,9 @@ class _NoteFormState extends State<_NoteForm> {
             body: body.isEmpty ? null : body,
             tag: tag.isEmpty ? null : tag,
             attachments: List.unmodifiable(_files),
+            labels: _labels,
+            notebook:
+                _notebook.text.trim().isEmpty ? null : _notebook.text.trim(),
           )
         : widget.existing!.copyWith(
             title: title,
@@ -204,6 +351,9 @@ class _NoteFormState extends State<_NoteForm> {
             tag: tag,
             clearTag: tag.isEmpty,
             attachments: List.unmodifiable(_files),
+            labels: _labels,
+            clearNotebook: _notebook.text.trim().isEmpty,
+            notebook: _notebook.text.trim(),
           );
     Navigator.of(context).pop(result);
   }
@@ -291,6 +441,11 @@ class _NoteFormState extends State<_NoteForm> {
                     onTap: () => _applyTag('m')),
                 _FormatButton(
                     label: '•', tooltip: 'Bullet point', onTap: _applyBullet),
+                _FormatButton(
+                    label: 'Link',
+                    width: 48,
+                    tooltip: 'Link to a note or [[tasks:deadline]]',
+                    onTap: _insertLink),
                 SizedBox(
                   width: 36,
                   height: 34,
@@ -347,7 +502,60 @@ class _NoteFormState extends State<_NoteForm> {
                 ],
               ),
             ],
+            const SizedBox(height: 16),
+            Text('Labels',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Ink0.muted,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            LabelEditor(
+              labels: _labels,
+              suggestions: widget.existingLabels,
+              onChanged: (next) => setState(() => _labels = next),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _notebook,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                hintText: 'Notebook — optional',
+                prefixIcon: Icon(Icons.book_outlined, size: 18),
+              ),
+            ),
             const SizedBox(height: 18),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                TextButton.icon(
+                  key: const Key('note-clip-web'),
+                  onPressed: _clipWeb,
+                  icon: const Icon(Icons.language, size: 16),
+                  label: const Text('Clip URL'),
+                ),
+                TextButton.icon(
+                  onPressed: _capturePhoto,
+                  icon: const Icon(Icons.photo_camera_outlined, size: 16),
+                  label: const Text('Photo'),
+                ),
+                TextButton.icon(
+                  key: const Key('note-voice'),
+                  onPressed: _toggleRecording,
+                  icon: Icon(_recording ? Icons.stop_circle : Icons.mic_none,
+                      size: 16, color: _recording ? Colors.red : null),
+                  label: Text(_recording ? 'Stop recording' : 'Voice memo'),
+                ),
+                TextButton.icon(
+                  key: const Key('note-transcribe'),
+                  onPressed: _transcribe,
+                  icon: const Icon(Icons.graphic_eq, size: 16),
+                  label: const Text('Transcribe'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Text('Attachments',
@@ -423,6 +631,7 @@ class _FormatButton extends StatelessWidget {
     this.bold = false,
     this.italic = false,
     this.underline = false,
+    this.width = 36,
   });
 
   final String label;
@@ -431,6 +640,7 @@ class _FormatButton extends StatelessWidget {
   final bool bold;
   final bool italic;
   final bool underline;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -440,7 +650,7 @@ class _FormatButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          width: 36,
+          width: width,
           height: 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(

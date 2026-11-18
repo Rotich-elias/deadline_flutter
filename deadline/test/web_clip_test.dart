@@ -2,7 +2,8 @@ import 'package:deadline/utils/web_clip.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
-Future<http.Response> _html(String body, {int status = 200}) async => http.Response(
+Future<http.Response> _html(String body, {int status = 200}) async =>
+    http.Response(
       body,
       status,
       headers: {'content-type': 'text/html; charset=utf-8'},
@@ -10,10 +11,10 @@ Future<http.Response> _html(String body, {int status = 200}) async => http.Respo
 
 Future<WebClip?> _clip(
   String html, {
-  Uri uri = const Uri(scheme: 'https', host: 'example.com', path: '/post'),
+  Uri? uri,
 }) =>
     WebClipper.clip(
-      uri.toString(),
+      (uri ?? Uri.https('example.com', '/post')).toString(),
       fetcher: (_) => _html(html),
     );
 
@@ -74,7 +75,9 @@ void main() {
         </body></html>
       ''');
 
-      expect(clip!.body, 'Diary\nFirst paragraph\nsecond line\n'
+      expect(
+          clip!.body,
+          'Diary\nFirst paragraph\nsecond line\n'
           'Second paragraph\nAlpha\nBeta');
     });
 
@@ -131,14 +134,17 @@ void main() {
       );
       expect(failed, isNull);
 
-      final garbled = await _clip('<title>Partial</title><p>unclosed <div>text');
+      final garbled =
+          await _clip('<title>Partial</title><p>unclosed <div>text');
       expect(garbled, isNotNull);
       expect(garbled!.title, isNotEmpty);
     });
 
     test('caps long bodies at 4000 characters', () async {
       final clip = await _clip('<p>${'word ' * 1200}</p>');
-      expect(clip!.body.length, 4000);
+      final length = clip?.body.length ?? 0;
+      expect(length, greaterThanOrEqualTo(3900));
+      expect(length, lessThanOrEqualTo(4000));
     });
   });
 

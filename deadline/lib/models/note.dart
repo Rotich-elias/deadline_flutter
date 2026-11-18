@@ -21,6 +21,8 @@ class Note {
     this.locked = false,
     this.pinned = false,
     this.attachments = const [],
+    this.labels = const [],
+    this.notebook,
     DateTime? updatedAt,
   }) : updatedAt = updatedAt ?? DateTime.now().toUtc();
 
@@ -30,6 +32,8 @@ class Note {
     String? tag,
     bool locked = false,
     bool pinned = false,
+    List<String>? labels,
+    String? notebook,
   }) {
     return Note(
       id: _uuid.v4(),
@@ -38,6 +42,8 @@ class Note {
       tag: tag,
       locked: locked,
       pinned: pinned,
+      labels: labels ?? const [],
+      notebook: notebook,
     );
   }
 
@@ -76,6 +82,12 @@ class Note {
   /// payloads, so another device sees the file but cannot open it.
   List<NoteAttachment> attachments;
 
+  /// Multiple free-form labels in addition to the legacy single [tag].
+  List<String> labels;
+
+  /// Notebook this note belongs to, for grouping related notes together.
+  String? notebook;
+
   bool get hasAttachments => attachments.isNotEmpty;
 
   /// True when this copy has local changes the server has not seen.
@@ -93,6 +105,9 @@ class Note {
     bool? locked,
     bool? pinned,
     List<NoteAttachment>? attachments,
+    List<String>? labels,
+    String? notebook,
+    bool clearNotebook = false,
     DateTime? updatedAt,
   }) {
     return Note(
@@ -106,6 +121,8 @@ class Note {
       locked: locked ?? this.locked,
       pinned: pinned ?? this.pinned,
       attachments: attachments ?? this.attachments,
+      labels: labels ?? this.labels,
+      notebook: clearNotebook ? null : (notebook ?? this.notebook),
       updatedAt: updatedAt ?? DateTime.now().toUtc(),
     );
   }
@@ -148,6 +165,27 @@ class Note {
     return NoteAttachment.fromJson(map, noteId);
   }
 
+  static List<String> _parseLabels(Object? raw) {
+    Iterable<dynamic> values;
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        values = jsonDecode(raw) as Iterable<dynamic>;
+      } catch (_) {
+        return const [];
+      }
+    } else if (raw is Iterable) {
+      values = raw;
+    } else {
+      return const [];
+    }
+    final result = <String>{};
+    for (final value in values) {
+      final label = value.toString().trim();
+      if (label.isNotEmpty) result.add(label);
+    }
+    return List.unmodifiable(result.toList()..sort());
+  }
+
   static List<NoteAttachment> _parseAttachments(Object? raw, String noteId) {
     Iterable<dynamic> values;
     if (raw is String && raw.isNotEmpty) {
@@ -182,6 +220,8 @@ class Note {
         'locked': locked ? 1 : 0,
         'pinned': pinned ? 1 : 0,
         'attachments': jsonEncode(attachments.map((a) => a.toRow()).toList()),
+        'labels': jsonEncode(labels),
+        'notebook': notebook,
       };
 
   factory Note.fromRow(Map<String, Object?> r) => Note(
@@ -200,6 +240,8 @@ class Note {
                 isUtc: true)
             : null,
         attachments: _parseAttachments(r['attachments'], r['id'] as String),
+        labels: _parseLabels(r['labels']),
+        notebook: r['notebook'] as String?,
       );
 
   /// [archivedAt] is intentionally absent: the archive is device-local, so a
@@ -217,6 +259,8 @@ class Note {
         'updated_at': updatedAt.toIso8601String(),
         'pinned': pinned,
         'attachments': [for (final a in attachments) a.toJson()],
+        'labels': labels,
+        'notebook': notebook,
       };
 
   factory Note.fromJson(Map<String, dynamic> j) {
@@ -234,6 +278,8 @@ class Note {
       archivedAt: deleted ? updatedAt : null,
       pinned: j['pinned'] == true || j['pinned'] == 1,
       attachments: _parseAttachments(j['attachments'], id),
+      labels: _parseLabels(j['labels']),
+      notebook: j['notebook'] as String?,
       dirty: false,
     );
   }

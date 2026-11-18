@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/attachment.dart';
 import '../models/note.dart';
+import '../services/activity_log.dart';
 import '../services/attachments.dart';
+import '../utils/linking.dart';
 import '../utils/search.dart';
 import 'local_db.dart';
 
@@ -25,12 +29,53 @@ class NotesStore extends ChangeNotifier {
   List<String> tags = [];
   String? tagFilter;
 
+  /// Multiple labels and notebook grouping, with their active filters.
+  List<String> labels = [];
+  String? labelFilter;
+  List<String> notebooks = [];
+  String? notebookFilter;
+
+  ActivityLog? _activityLog;
+  Future<ActivityLog> get activityLog async =>
+      _activityLog ??= await ActivityLog.instance();
+
+  Future<void> _log(String action, {String? detail, String? entityId}) async {
+    try {
+      await (await activityLog)
+          .record(action, detail: detail, entityId: entityId);
+    } catch (_) {
+      // Never let logging block a note edit.
+    }
+  }
+
   /// Free-text filter for the note list. Empty means "show everything".
   String query = '';
 
   void setTagFilter(String? tag) {
     tagFilter = tag;
     notifyListeners();
+  }
+
+  void setLabelFilter(String? label) {
+    labelFilter = label;
+    notifyListeners();
+  }
+
+  void setNotebookFilter(String? notebook) {
+    notebookFilter = notebook;
+    notifyListeners();
+  }
+
+  Future<void> setLabels(Note n, List<String> next) {
+    final clean = next.map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    return save(n.copyWith(labels: clean));
+  }
+
+  Future<void> setNotebook(Note n, String? notebook) {
+    final clean = notebook?.trim();
+    return save(clean == null || clean.isEmpty
+        ? n.copyWith(clearNotebook: true)
+        : n.copyWith(notebook: clean));
   }
 
   void setQuery(String value) {
@@ -45,6 +90,12 @@ class NotesStore extends ChangeNotifier {
     if (tagFilter != null) {
       list = list.where((n) => n.tag == tagFilter).toList();
     }
+    if (labelFilter != null) {
+      list = list.where((n) => n.labels.contains(labelFilter)).toList();
+    }
+    if (notebookFilter != null) {
+      list = list.where((n) => n.notebook == notebookFilter).toList();
+    }
     if (query.isNotEmpty) {
       // A locked note's title, body and tag must not leak through a search
       // result. It reappears, still masked, once the search is cleared.
@@ -54,8 +105,10 @@ class NotesStore extends ChangeNotifier {
           query,
           (n) => [
                 n.title,
-                n.plainBody,
+                LinkParser.strip(n.plainBody),
                 n.tag,
+                n.notebook,
+                ...n.labels,
                 ...n.attachments.map((a) => a.fileName),
               ]);
     }
@@ -69,18 +122,28 @@ class NotesStore extends ChangeNotifier {
     _notes = await _db.allNotes();
     _archived = await _db.archivedNotes();
     tags = await _db.distinctNoteTags();
+    labels = await _db.distinctLabels();
+    notebooks = await _db.distinctNotebooks();
     if (tagFilter != null && !tags.contains(tagFilter)) tagFilter = null;
+    if (labelFilter != null && !labels.contains(labelFilter)) {
+      labelFilter = null;
+    }
+    if (notebookFilter != null && !notebooks.contains(notebookFilter)) {
+      notebookFilter = null;
+    }
     notifyListeners();
   }
 
   Future<void> add(Note n) async {
     await _db.upsertNote(n);
+    unawaited(_log('Created note', detail: n.title, entityId: n.id));
     await load();
     onLocalChange?.call();
   }
 
   Future<void> save(Note n) async {
     await _db.upsertNote(n);
+    unawaited(_log('Updated note', detail: n.title, entityId: n.id));
     await load();
     onLocalChange?.call();
   }

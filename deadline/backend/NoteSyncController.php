@@ -32,6 +32,9 @@ class NoteSyncController extends Controller
             'changes.*.attachments.*.kind' => ['required', 'integer', 'min:0', 'max:3'],
             'changes.*.attachments.*.size' => ['required', 'integer', 'min:0'],
             'changes.*.attachments.*.created_at' => ['required', 'date'],
+            'changes.*.notebook' => ['nullable', 'string', 'max:255'],
+            'changes.*.labels' => ['nullable', 'array'],
+            'changes.*.labels.*' => ['string', 'max:255'],
             'changes.*.updated_at' => ['required', 'date'],
         ]);
 
@@ -61,6 +64,8 @@ class NoteSyncController extends Controller
                         'deleted' => $change['deleted'],
                         'pinned' => $change['pinned'] ?? false,
                         'attachments' => $change['attachments'] ?? [],
+                        'notebook' => $change['notebook'] ?? null,
+                        'labels' => $change['labels'] ?? [],
                         'updated_at' => $incomingAt,
                         'created_at' => $existing?->created_at ?? Carbon::now('UTC'),
                         'synced_at' => $serverTime,

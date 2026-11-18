@@ -58,7 +58,8 @@ class WebClipper {
   static WebClip? fromPastedText(String text, {String? url}) {
     if (url != null && _httpUri(url) == null) return null;
 
-    final decoded = _decode(text).replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final decoded =
+        _decode(text).replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final lines = decoded
         .split('\n')
         .map(_tidyLine)
@@ -113,14 +114,12 @@ class WebClipper {
   /// Finds the `content` of a `<meta>` tag addressed by `name`, `property` or
   /// `itemprop`. Quoting is optional in the wild, so accept all three forms.
   static String? _meta(String html, String key) {
-    for (final match in RegExp(r'<meta\b[^>]*>', caseSensitive: false)
-        .allMatches(html)) {
+    for (final match
+        in RegExp(r'<meta\b[^>]*>', caseSensitive: false).allMatches(html)) {
       final attrs = _attributes(match.group(0)!);
-      final name = (attrs['name'] ??
-              attrs['property'] ??
-              attrs['itemprop'] ??
-              '')
-          .toLowerCase();
+      final name =
+          (attrs['name'] ?? attrs['property'] ?? attrs['itemprop'] ?? '')
+              .toLowerCase();
       if (name != key.toLowerCase()) continue;
       final content = attrs['content'];
       if (content != null && content.trim().isNotEmpty) return content;
@@ -143,8 +142,8 @@ class WebClipper {
   }
 
   static Uri? _canonical(Uri base, String html) {
-    for (final match in RegExp(r'<link\b[^>]*>', caseSensitive: false)
-        .allMatches(html)) {
+    for (final match
+        in RegExp(r'<link\b[^>]*>', caseSensitive: false).allMatches(html)) {
       final attrs = _attributes(match.group(0)!);
       final rel = attrs['rel']?.toLowerCase().split(RegExp(r'\s+')) ?? const [];
       if (!rel.contains('canonical')) continue;

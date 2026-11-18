@@ -69,7 +69,9 @@ class LocationAlert {
       };
 
   factory LocationAlert.fromJson(Object? raw) {
-    if (raw is! Map) return const LocationAlert(label: '', latitude: 0, longitude: 0);
+    if (raw is! Map) {
+      return const LocationAlert(label: '', latitude: 0, longitude: 0);
+    }
     final map = Map<String, dynamic>.from(raw);
     return LocationAlert(
       label: (map['label'] ?? '').toString(),
@@ -411,7 +413,9 @@ class Task {
   }
 
   static DateTime? _parseDate(Object? raw) {
-    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true);
+    if (raw is int) {
+      return DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true);
+    }
     if (raw is String && raw.isNotEmpty) {
       try {
         return DateTime.parse(raw).toUtc();
@@ -521,7 +525,7 @@ class Task {
         'labels': jsonEncode(labels),
         'category': category,
         'location_alert':
-            locationAlert == null ? null : jsonEncode(locationAlert.toJson()),
+            locationAlert == null ? null : jsonEncode(locationAlert!.toJson()),
       };
 
   factory Task.fromRow(Map<String, Object?> r) => Task(

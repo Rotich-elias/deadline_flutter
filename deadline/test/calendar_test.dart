@@ -193,6 +193,7 @@ void main() {
               w is TextField &&
               w.decoration?.hintText == 'e.g. ICT3052 forensics report'),
           'New task');
+      await tester.pumpAndSettle();
       final save = find.text('Add task');
       await tester.ensureVisible(save);
       await tester.pumpAndSettle();

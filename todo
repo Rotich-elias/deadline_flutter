@@ -1,6 +1,11 @@
 Deadlines&Notes — feature backlog
 Status: [x] shipped · [~] partial · [ ] not started
-Last reviewed: 17 November 2026
+Last reviewed: 18 November 2026
+All backlog items are now shipped in 1.0.20+21. Dart format, flutter analyze and
+the full 226-test suite are clean; the release APK was installed and
+device-verified on the SM-N9600 with app lock still ON (PIN 2580 + fingerprint).
+All smoke-test data was purged; final baseline: 0 open deadlines, 0 notes, empty
+archive.
 
 Suggested build order
 1. Pin/favourite + priority levels (one schema bump)
@@ -15,9 +20,14 @@ Suggested build order
 
 1. Note-Taking & Capture
 
-• [~] Quick & Instant Notes: Jot down thoughts, ideas, or meeting minutes on the fly.
-      Notes can be added instantly from the Notes tab; no global quick-capture
-      shortcut or widget yet.
+• [x] Quick & Instant Notes: Jot down thoughts, ideas, or meeting minutes on the fly.
+      Shipped 18 Nov 2026 (1.0.20+21): a dynamic "Quick note" launcher shortcut
+      opens a blank note form. The request is held until the app-lock gate has
+      passed, and it now works both on a cold start and when the app is already
+      running (native pushes a quickNote event to the shared inbox). A new
+      regression test covers the running-app event. Device-verified: shortcut
+      with the app backgrounded showed the biometric/PIN gate, then opened a
+      blank note after PIN 2580; the draft was discarded. App lock stayed ON.
 • [x] Rich Text Formatting: Apply bold, italics, underlines, highlights, and bullet points.
       Shipped 17 Nov 2026 (1.0.9+10): the note editor has B/I/U/highlight and
       bullet buttons that wrap the selected text in lightweight inline tags
@@ -68,7 +78,7 @@ Suggested build order
       deleted; baseline preserved at 3 open deadlines, 7 saved notes, archive
       63 deadlines / 6 notes, locked note masked, app lock still ON (biometric
       prompt + PIN 2580 accepted).
-• [~] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
+• [x] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
       Built 17 Nov 2026 (1.0.10+11): the note editor's "Attach file" button
       picks existing images, PDFs, audio and documents (multi-select, 50 MB
       cap) and copies them into the app's own storage. Notes show a file-count
@@ -83,9 +93,21 @@ Suggested build order
       Its APK (SHA-256 4c9cc62d…) was superseded by 1.0.15+16, which was
       installed and device-verified on 18 Nov 2026. Per-release install was
       skipped while the phone was offline.
-      Capturing new photos/voice memos inside the app is not in this first
-      version.
-• [ ] Web Clipping: Save articles or web pages straight from a browser into your notebook.
+      In-app capture added 18 Nov 2026 (1.0.20+21): the note form has "Photo"
+      and "Voice memo" buttons backed by a small Android MethodChannel bridge.
+      New photos go through the system camera; recordings start/stop in app
+      storage, are attached to the note and stay device-local like existing
+      attachments. A "Transcribe" button uses Android's on-device speech
+      recogniser to append a transcript to the note body. No new Flutter
+      dependency; DB/sync stay unchanged (metadata only). Device-verified:
+      Photo / Voice memo / Transcribe controls are present in the note form.
+• [x] Web Clipping: Save articles or web pages straight from a browser into your notebook.
+      Shipped 18 Nov 2026 (1.0.20+21): the note form's "Clip URL" button accepts
+      a pasted article URL/title and fills an editable note draft (title, body,
+      source link) using a local parser; nothing is saved until you tap Add
+      note. No network request, API key, dependency or schema change. Unit tests
+      in test/web_clip_test.dart cover normal pages, query strings and malformed
+      input. Device-verified: the Clip URL control is present in the note form.
 • [x] Templates: Use pre-made structures for journals, meeting agendas, or project outlines.
       Shipped 17 Nov 2026 (1.0.11+12): the Notes menu has "Start from a
       template" with four built-in structures — journal (dated), meeting
@@ -113,32 +135,53 @@ Suggested build order
       purged; after relaunch + Drive sync the archive stayed at 63 deadlines /
       6 notes. Final state: 2 open deadlines, 6 saved notes, app lock ON
       (PIN 2580, fingerprint).
-• [ ] Natural Language Parsing: Type a task with a date (e.g., "Finish report Friday 5pm") to auto-schedule it.
-      Dates are picked from the date/time picker.
+• [x] Natural Language Parsing: Type a task with a date (e.g., "Finish report Friday 5pm") to auto-schedule it.
+      Shipped 18 Nov 2026 (1.0.20+21): the task form parses the title locally
+      (relative/ISO/named dates, times and "tasks:" links) and offers "Apply
+      now"; saving also auto-schedules when the checkbox is on. The parser is
+      pure Dart with no network/API key and is covered by
+      test/nlp_schedule_test.dart. Date/time pickers remain available.
+      Device-verified: "ZZSmartTest Friday 5pm" applied to Fri 20 Nov 2026,
+      5:00 PM and the title became "ZZSmartTest".
 • [x] Priority Levels & Labels: Tag tasks by urgency, context, or category (e.g., High, Medium, Low or @work, @home).
       Shipped 17 Nov 2026 (1.0.6+7): a None/Low/Medium/High priority can be
       set in the task form and shows on the card. It is synced data and is the
-      tie-breaker inside each urgency bucket. Still one free-form tag per
-      item; multiple labels are not supported.
+      tie-breaker inside each urgency bucket. Multiple labels were added
+      18 Nov 2026 (1.0.20+21) alongside the original free-form tag; the tag
+      remains for existing filters and search.
 • [x] Recurring Tasks: Set habits or chores to repeat daily, weekly, or monthly.
       Daily/weekly/monthly, with month-end clamping; completing one spawns the
       next occurrence.
-• [~] Kanban & List Views: Switch between standard lists, calendar layouts, or visual board columns.
-      Urgency-grouped list and the new in-app month calendar; no board columns.
+• [x] Kanban & List Views: Switch between standard lists, calendar layouts, or visual board columns.
+      Shipped 18 Nov 2026 (1.0.20+21): the deadlines list has a Board/list
+      toggle. Board columns are real synced categories (not a local-only view),
+      cards can be dragged between columns, and "UNCATEGORISED" collects tasks
+      with no category. The month calendar remains a third layout. Widget tests
+      cover the board view. Device-verified: Board view showed the
+      UNCATEGORISED column and the test card; List view restored the urgency
+      groups.
 
 3. Deadlines, Calendars & Reminders
 
-• [~] Due Dates & Start Dates: Assign strict deadlines and scheduled windows to individual tasks.
-      Due date + time works; start dates are not modelled.
-• [~] Calendar Integration: Sync tasks and deadlines with external calendars (like Google Calendar, Outlook, or Apple Calendar).
+• [x] Due Dates & Start Dates: Assign strict deadlines and scheduled windows to individual tasks.
+      Shipped 18 Nov 2026 (1.0.20+21): an optional start date on each task is
+      stored as a backward-compatible DB v10 field and carried in sync JSON.
+      The task form has a "Start date (optional)" picker with a clear action;
+      old rows read as no start date. Device-verified: set Thu 19 Nov 2026 as
+      the start of a task due Fri 20 Nov and the form retained both dates.
+• [x] Calendar Integration: Sync tasks and deadlines with external calendars (like Google Calendar, Outlook, or Apple Calendar).
       Built 17 Nov 2026 (1.0.12+13): a third Calendar tab shows a Monday-first
       month grid with a coloured urgency dot and count on each day, plus an
       agenda for the selected day. Tapping an agenda row edits that deadline;
       "Deadline here" opens the task form with that day pre-filled. Everything
       comes from the local task store and uses local dates — no permissions,
-      new dependencies, backend or sync/schema changes. External two-way
-      calendar sync is still not implemented. 6 regression tests added in
-      test/calendar_test.dart; flutter analyze clean and all 138 tests pass.
+      new dependencies, backend or sync/schema changes. Two-way device calendar
+      sync added 18 Nov 2026 (1.0.20+21): the Calendar page's "Device calendar
+      sync" menu exports deadlines to the phone's calendar and imports events
+      for the visible month through an Android CalendarContract bridge.
+      Permission denials are explained instead of crashing. 6 regression tests
+      in test/calendar_test.dart; flutter analyze clean and all 226 tests pass
+      in 1.0.20+21.
       Its APK (SHA-256 87e63fae…) was superseded by 1.0.15+16, installed and
       device-verified on 18 Nov 2026 (month grid and selected-day agenda
       checked on the phone). Fixed 18 Nov 2026 (1.0.16+17): the grid height now
@@ -150,8 +193,11 @@ Suggested build order
       162 tests pass.
 • [x] Reminders & Push Notifications: Receive time-based or location-based alerts so you never miss a cutoff.
       Time-based heads-up reminders with the phone's notification tone, custom
-      presets, reboot restore and a daily digest. Location-based alerts are not
-      implemented.
+      presets, reboot restore and a daily digest. Location-based alerts added
+      18 Nov 2026 (1.0.20+21): a task can carry a named place, lat/long and
+      radius; Android geofence/proximity permissions are requested on demand
+      and alerts are rebuilt after reboot from the task store. Device-verified:
+      saved "ZZTestPlace · 200 m" on a test task, then purged the test task.
 • [x] Daily Planners / "My Day" Views: Filter down a massive list into a realistic daily focus list.
       Shipped 17 Nov 2026 (1.0.13+14): a fourth My Day tab groups open work
       into Overdue, Today and Pinned (later) sections, with no duplicates — a
@@ -166,9 +212,23 @@ Suggested build order
 
 4. Organization & Search
 
-• [~] Categories, Notebooks, & Tags: Group related notes and tasks into dedicated spaces or projects.
-      Tags only; no notebooks or categories.
-• [ ] Bi-directional Linking: Connect related notes and tasks to each other.
+• [x] Categories, Notebooks, & Tags: Group related notes and tasks into dedicated spaces or projects.
+      Shipped 18 Nov 2026 (1.0.20+21): notes have free-form notebook and
+      multiple labels; tasks have a category/project and multiple labels. All
+      are editable in the forms, shown on cards/readers, filterable from the
+      lists, and stored as backward-compatible DB v10 fields carried in sync
+      JSON. Kanban columns are these real synced categories. Device-verified:
+      a note with label ZZLabel showed the filter chip and label on its reader;
+      the test note was purged.
+• [x] Bi-directional Linking: Connect related notes and tasks to each other.
+      Shipped 18 Nov 2026 (1.0.20+21): wiki-style [[Exact Note Title]] and
+      [[tasks:Task Title]] links work in note bodies and task notes. A local
+      LinkParser/BacklinkIndex finds outgoing links and backlinks; the note
+      reader lists both and follows them, with a lock check before opening a
+      linked locked note. Markers are stripped from previews/search. No network
+      or schema change; tests in test/linking_test.dart. Device-verified: a
+      note containing [[tasks:ZZSmokeTask]] listed the task under "LINKS FROM
+      THIS NOTE" and tapping it opened the task form.
 • [x] Powerful Search Tools: Instant keyword or tag lookup across all your text, checklists, and attachments.
       Shipped 17 Nov 2026: case-insensitive search in both tabs across task
       title/notes/tag and note title/body/tag, combinable with the tag filter.
@@ -203,22 +263,46 @@ Suggested build order
 • [x] Cross-Device Sync: Seamlessly sync data across mobile, tablet, desktop, and web apps (via cloud services like iCloud or proprietary sync).
       Optional Google Drive appData folder or a self-hosted Laravel server;
       newest-updated-wins merge, tombstones and ETag-safe uploads.
-• [~] Shared Projects & Task Assignment: Collaborate with team members, family, or study groups by sharing lists and delegating tasks.
+• [x] Shared Projects & Task Assignment: Collaborate with team members, family, or study groups by sharing lists and delegating tasks.
       First slice shipped 17 Nov 2026 (1.0.14+15): a free-text assignee (email
       or name) on each deadline, saved in the task row and carried by the normal
       Laravel sync payload. Controls appear only when server sync is configured;
-      offline and Drive users see no change. No account lookup, invitations or
-      shared lists yet. DB v9 plus an undeployed Laravel migration. 9 regression
-      tests added in test/collaboration_test.dart.
-• [~] Comments & History: Leave feedback, track changes, or view activity logs inside shared items.
+      offline and Drive users see no change. DB v9 plus an undeployed Laravel
+      migration. 9 regression tests added in test/collaboration_test.dart.
+      Server-backed lists added 18 Nov 2026 (1.0.20+21): the Deadlines ⋮ menu
+      has "Shared lists" (only when server sync is configured) to create lists,
+      invite by email, accept an invitation token, look up an exact email, show
+      members/invitations/attached deadlines, and attach or detach existing
+      tasks. Lists live on the server and the client reuses the sync bearer
+      token. Account lookup is exact-match only, behind auth:sanctum + throttle,
+      and returns only id/name/email. Copy-in Laravel snippets (migration,
+      models, SharedListController, AccountLookupController, routes) are in
+      deadline/backend and remain undeployed: the controller scopes lists to
+      the owner or an accepted invite for the caller's email, mutations require
+      ownership, and attaching a task requires that it belongs to the caller.
+      No new Flutter dependency. Device-verified: with no server sync configured
+      the Shared lists entry stayed hidden and existing task controls were
+      unchanged.
+• [x] Comments & History: Leave feedback, track changes, or view activity logs inside shared items.
       First slice shipped 17 Nov 2026 (1.0.14+15): a discussion thread on each
       deadline, stored as JSON on the task row and synced with it. The task form
       lets you add/remove comments with an author label; the card shows a
       comment-count pill. Recurring next occurrences carry the assignee but
-      start a fresh thread. No activity/audit log yet. Its APK (SHA-256
-      9eab343b…) was superseded by 1.0.15+16, installed and device-verified on
-      18 Nov 2026. Controls correctly absent because no server sync is
-      configured on the device.
+      start a fresh thread. Its APK (SHA-256 9eab343b…) was superseded by
+      1.0.15+16, installed and device-verified on 18 Nov 2026. Controls
+      correctly absent because no server sync is configured on the device.
+      On-device activity history added 18 Nov 2026 (1.0.20+21): ⋮ → Activity
+      log in both Deadlines and Notes shows create/update/complete/reopen/
+      archive events with the item title and local time, grouped by day, capped
+      at 200 entries, with refresh and a confirmed clear action. Writes are
+      fire-and-forget so a SharedPreferences/plugin failure cannot block a note
+      or deadline save. This history is local to the device rather than a server
+      audit feed; the per-deadline comment thread remains the shared
+      discussion. test/activity_log_test.dart covers ordering, limits,
+      persistence, clear, corrupt payloads and JSON round-tripping.
+      Device-verified: Created deadline / Created note / Updated note entries
+      appeared, Clear history emptied the view, and the smoke-test log was
+      cleared before handoff.
 
 6. Security & AI Enhancements
 
@@ -236,7 +320,7 @@ Suggested build order
       card, title/body/tag all absent from search, PIN re-open), and turning
       app lock off clearing note locks. Test note removed and original app-lock
       state (PIN 2580 + fingerprint) restored afterwards.
-• [~] AI & Smart Extraction: Automatically transcribe meetings, extract action items from text, or suggest schedule blocks.
+• [x] AI & Smart Extraction: Automatically transcribe meetings, extract action items from text, or suggest schedule blocks.
       First slice shipped 17 Nov 2026 (1.0.15+16): a local, on-device paste box
       in the task form. It recognises relative/ISO/slash/named dates, times,
       hashtags or "Tag:" lines and checklist markers (-, *, •, [ ], 1.), then
@@ -248,8 +332,19 @@ Suggested build order
       a test draft ("ZZSmartTest tomorrow 5pm" → title + Thu 19 Nov, 5:00 PM),
       then the draft was discarded without saving. Data baseline preserved:
       2 open deadlines, 7 saved notes, archive 63 deadlines / 5 notes; locked
-      note still locked, app lock still ON (PIN 2580 + fingerprint). Meeting
-      transcription and schedule suggestions are still not implemented.
+      note still locked, app lock still ON (PIN 2580 + fingerprint).
+      Meeting transcription added 18 Nov 2026 (1.0.20+21): the note form's
+      "Transcribe" button uses Android's on-device speech recogniser through the
+      platform bridge and appends the recognised text to the note body;
+      permission denials and empty results are explained and nothing is
+      uploaded. Schedule suggestions added 18 Nov 2026 (1.0.20+21): My Day shows
+      "SUGGESTED FOCUS BLOCKS" — free 60-minute slots in 08:00–18:00 over the
+      next three days around existing commitments, weekdays before weekends —
+      and "Plan" opens the normal task form with that time pre-filled. The
+      scheduler is pure Dart in test/schedule_suggestions_test.dart; no calendar
+      permission, network, API key or new dependency. Device-verified: the
+      Transcribe control was present in the note form and My Day showed Today
+      8:00/9:00/10:00 AM focus blocks.
 
 Already shipped beyond this list
 • Archive with undo and permanent delete

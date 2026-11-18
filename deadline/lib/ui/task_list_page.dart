@@ -4,12 +4,16 @@ import '../data/notes_store.dart';
 import '../data/task_store.dart';
 import '../models/task.dart';
 import '../services/app_lock_service.dart';
+import '../sync/collaboration_api.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import '../utils/urgency.dart';
+import 'activity_log_page.dart';
 import 'app_lock_settings.dart';
 import 'archive_page.dart';
 import 'privacy_page.dart';
+import 'shared_lists_page.dart';
+import 'task_board.dart';
 import 'search_field.dart';
 import 'settings_sheet.dart';
 import 'sync_button.dart';
@@ -41,6 +45,7 @@ class _TaskListPageState extends State<TaskListPage> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   bool _searching = false;
+  bool _board = false;
 
   @override
   void dispose() {
@@ -79,6 +84,7 @@ class _TaskListPageState extends State<TaskListPage> {
   Future<void> _create(BuildContext context) async {
     final t = await showTaskForm(context,
         existingTags: widget.store.tags,
+        existingLabels: widget.store.labels,
         collaborationEnabled: _collaborationEnabled);
     if (t != null) await widget.store.add(t);
   }
@@ -87,6 +93,7 @@ class _TaskListPageState extends State<TaskListPage> {
     final t = await showTaskForm(context,
         existing: task,
         existingTags: widget.store.tags,
+        existingLabels: widget.store.labels,
         collaborationEnabled: _collaborationEnabled);
     if (t != null) await widget.store.save(t);
   }
@@ -123,6 +130,8 @@ class _TaskListPageState extends State<TaskListPage> {
                   notesStore: widget.notesStore,
                   searching: _searching,
                   onToggleSearch: _toggleSearch,
+                  onToggleView: () => setState(() => _board = !_board),
+                  boardView: _board,
                   onOpenArchive: () => _openArchive(context),
                 ),
                 if (_searching)
@@ -138,12 +147,37 @@ class _TaskListPageState extends State<TaskListPage> {
                     selected: widget.store.tagFilter,
                     onSelect: widget.store.setTagFilter,
                   ),
+                if (widget.store.labels.isNotEmpty)
+                  TagFilterRow(
+                    tags: widget.store.labels,
+                    selected: widget.store.labelFilter,
+                    onSelect: widget.store.setLabelFilter,
+                  ),
+                if (widget.store.categories.isNotEmpty)
+                  TagFilterRow(
+                    tags: widget.store.categories,
+                    selected: widget.store.categoryFilter,
+                    onSelect: widget.store.setCategoryFilter,
+                  ),
                 Expanded(
                   child: tasks.isEmpty
                       ? _Empty(query: widget.store.query)
                       : RefreshIndicator(
                           onRefresh: widget.sync.syncNow,
-                          child: _buildList(context, tasks),
+                          child: _board
+                              ? TaskBoard(
+                                  store: widget.store,
+                                  tasks: tasks,
+                                  onEdit: (t) => _edit(context, t),
+                                  onToggle: (t) {
+                                    widget.store.toggleDone(t);
+                                  },
+                                  onPin: (t) {
+                                    widget.store.setPinned(t, !t.pinned);
+                                  },
+                                  showCollaboration: _collaborationEnabled,
+                                )
+                              : _buildList(context, tasks),
                         ),
                 ),
               ],
@@ -231,6 +265,8 @@ class _Header extends StatelessWidget {
     required this.notesStore,
     required this.searching,
     required this.onToggleSearch,
+    required this.onToggleView,
+    required this.boardView,
     required this.onOpenArchive,
   });
   final TaskStore store;
@@ -240,6 +276,8 @@ class _Header extends StatelessWidget {
   final NotesStore notesStore;
   final bool searching;
   final VoidCallback onToggleSearch;
+  final VoidCallback onToggleView;
+  final bool boardView;
   final VoidCallback onOpenArchive;
 
   @override
@@ -290,6 +328,15 @@ class _Header extends StatelessWidget {
                 Icon(searching ? Icons.close : Icons.search, color: Ink0.muted),
           ),
           IconButton(
+            tooltip: boardView ? 'List view' : 'Board view',
+            onPressed: onToggleView,
+            icon: Icon(
+                boardView
+                    ? Icons.view_list_outlined
+                    : Icons.view_kanban_outlined,
+                color: Ink0.muted),
+          ),
+          IconButton(
             tooltip: 'Archive',
             onPressed: onOpenArchive,
             icon: Icon(Icons.archive_outlined, color: Ink0.muted),
@@ -298,7 +345,7 @@ class _Header extends StatelessWidget {
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert, color: Ink0.muted),
             color: Ink0.surfaceHi,
-            onSelected: (v) {
+            onSelected: (v) async {
               if (v == 'completed') {
                 store.toggleShowCompleted();
               } else if (v == 'sync') {
@@ -313,6 +360,22 @@ class _Header extends StatelessWidget {
                 Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const PrivacyPolicyPage(),
                 ));
+              } else if (v == 'activity') {
+                final navigator = Navigator.of(context);
+                final log = await store.activityLog;
+                navigator.push(MaterialPageRoute<void>(
+                  builder: (_) => ActivityLogPage(log: log),
+                ));
+              } else if (v == 'shared') {
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => SharedListsPage(
+                    api: CollaborationApi(
+                      baseUrl: sync.baseUrl,
+                      token: sync.token,
+                    ),
+                    store: store,
+                  ),
+                ));
               }
             },
             itemBuilder: (_) => [
@@ -323,6 +386,11 @@ class _Header extends StatelessWidget {
               ),
               const PopupMenuItem(
                   value: 'digest', child: Text('Reminders & digest')),
+              const PopupMenuItem(
+                  value: 'activity', child: Text('Activity log')),
+              if (sync.method == SyncMethod.server && sync.configured)
+                const PopupMenuItem(
+                    value: 'shared', child: Text('Shared lists')),
               const PopupMenuItem(value: 'sync', child: Text('Sync settings')),
               const PopupMenuItem(
                   value: 'appearance', child: Text('Appearance')),
