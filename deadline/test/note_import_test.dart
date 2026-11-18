@@ -9,6 +9,7 @@ class _FakeNotesStore extends NotesStore {
 
   final List<Note> _all;
   final List<Note> added = [];
+  final List<Note> saved = [];
 
   @override
   List<Note> get notes => List.unmodifiable(_all);
@@ -20,6 +21,13 @@ class _FakeNotesStore extends NotesStore {
   Future<void> add(Note n) async {
     added.add(n);
     _all.add(n);
+  }
+
+  @override
+  Future<void> save(Note n) async {
+    saved.add(n);
+    final i = _all.indexWhere((old) => old.id == n.id);
+    if (i >= 0) _all[i] = n;
   }
 }
 
@@ -107,6 +115,68 @@ void main() {
       final parsed = NoteImport.parse('body text', name: '/cache/My note.txt');
       expect(parsed!.title, 'My note');
       expect(parsed.body, 'body text');
+    });
+
+    test('strips the Samsung Notes timestamp from the export file name', () {
+      final parsed = NoteImport.parse(
+        'If I was God for a day',
+        name: 'Books idea_260708_045209.txt',
+      );
+      expect(parsed!.title, 'Books idea');
+      expect(parsed.body, 'If I was God for a day');
+    });
+
+    test('falls back to the first line for a timestamp-only name', () {
+      final parsed = NoteImport.parse(
+        'Shopping list\nSugar\nMilk',
+        name: 'Notes_240429_030544.txt',
+      );
+      expect(parsed!.title, 'Shopping list');
+      expect(parsed.body, 'Sugar\nMilk');
+    });
+  });
+
+  group('repairing older imports', () {
+    test('renames timestamped titles without touching other notes', () async {
+      final store = _FakeNotesStore([
+        Note.create(title: 'Movies list _261011_141605', body: 'The Office'),
+        Note.create(title: 'My own note', body: 'unchanged'),
+      ]);
+
+      final repaired = await NoteImport.repairLegacyTitles(store);
+
+      expect(repaired, 1);
+      expect(store.saved.single.title, 'Movies list');
+      expect(store.notes.last.title, 'My own note');
+    });
+
+    test('uses the first body line when only "Notes" prefixes the title',
+        () async {
+      final store = _FakeNotesStore([
+        Note.create(title: 'Notes_230116_092550', body: 'Leseru fees\nKCB'),
+      ]);
+
+      await NoteImport.repairLegacyTitles(store);
+
+      expect(store.saved.single.title, 'Leseru fees');
+      expect(store.saved.single.body, 'KCB');
+    });
+
+    test('a repaired note is not duplicated by a fresh share of the same file',
+        () async {
+      final store = _FakeNotesStore([
+        Note.create(
+            title: 'Notes_240429_030544', body: 'Shopping list\nSugar\nMilk'),
+      ]);
+      await NoteImport.repairLegacyTitles(store);
+
+      final outcome = await NoteImport.importAll(store, const [
+        SharedNote('Shopping list\nSugar\nMilk',
+            name: 'Notes_240429_030544.txt'),
+      ]);
+
+      expect(outcome.imported, 0);
+      expect(outcome.duplicates, 1);
     });
   });
 

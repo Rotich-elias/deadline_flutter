@@ -8,6 +8,7 @@ import '../models/note.dart';
 import '../models/task.dart';
 import '../services/app_lock_service.dart';
 import '../services/attachments.dart';
+import '../services/platform_bridge.dart';
 import '../theme.dart';
 import '../utils/linking.dart';
 import '../utils/markup.dart';
@@ -15,6 +16,7 @@ import '../utils/rich_text.dart';
 import 'app_lock_settings.dart';
 import 'note_form_sheet.dart';
 import 'note_lock.dart';
+import 'paper_page.dart';
 import 'task_form_sheet.dart';
 
 /// Full-page read view for a single note, opened from [NotesListPage].
@@ -159,6 +161,20 @@ class NoteViewPage extends StatelessWidget {
     if (edited != null) await taskStore?.save(edited);
   }
 
+  /// Web addresses written in a note (including URLs imported from Samsung
+  /// Notes) open in the browser through the same bridge as the About link.
+  Future<void> _openLink(BuildContext context, String url) async {
+    final opened = await PlatformBridge.openUrl(url);
+    if (!opened && context.mounted) {
+      _say(context, 'Could not open $url');
+    }
+  }
+
+  Future<void> _followTarget(BuildContext context, String target) async {
+    final link = LinkParser.parse('[[$target]]').firstOrNull;
+    if (link != null) await _follow(context, link);
+  }
+
   Future<void> _follow(BuildContext context, NoteLink link) async {
     if (link.isTask) {
       await _openTask(context, null, link.target);
@@ -181,7 +197,7 @@ class NoteViewPage extends StatelessWidget {
     }
   }
 
-  Widget _noteBody(Note note) {
+  Widget _noteBody(BuildContext context, Note note) {
     final base = TextStyle(fontSize: 15.5, height: 1.55, color: Ink0.text);
     const highlight = Color(0xFFE4C441);
     final lines = note.body!.trim().split('\n');
@@ -189,20 +205,22 @@ class NoteViewPage extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < lines.length; i++) ...[
-          _noteLine(note, lines[i], i, base, highlight),
+          _noteLine(context, note, lines[i], i, base, highlight),
         ],
       ],
     );
   }
 
-  Widget _noteLine(
-      Note note, String line, int index, TextStyle base, Color highlight) {
+  Widget _noteLine(BuildContext context, Note note, String line, int index,
+      TextStyle base, Color highlight) {
     final check = parseChecklistLine(line.trimLeft());
     final span = buildRichSpan(
       check?.text ?? line,
       base: base,
       highlight: highlight,
       bullet: Ink0.muted,
+      onUrlTap: (url) => _openLink(context, url),
+      onWikiTap: (target) => _followTarget(context, target),
     );
     if (check == null) {
       if (line.trim().isEmpty) {
@@ -383,7 +401,14 @@ class NoteViewPage extends StatelessWidget {
                   ],
                   if ((note.body ?? '').trim().isNotEmpty) ...[
                     const SizedBox(height: 20),
-                    _noteBody(note),
+                    SizedBox(
+                      width: double.infinity,
+                      child: PaperPage(
+                        padding: const EdgeInsets.fromLTRB(18, 20, 16, 20),
+                        pinned: note.pinned,
+                        child: _noteBody(context, note),
+                      ),
+                    ),
                   ],
                   if (outgoing.isNotEmpty) ...[
                     const SizedBox(height: 22),

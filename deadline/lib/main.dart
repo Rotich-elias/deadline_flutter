@@ -9,6 +9,7 @@ import 'data/task_store.dart';
 import 'services/app_lock_service.dart';
 import 'services/location_alerts.dart';
 import 'services/note_draft_service.dart';
+import 'services/note_import.dart';
 import 'services/notifications.dart';
 import 'services/platform_bridge.dart';
 import 'sync/sync_service.dart';
@@ -89,6 +90,9 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       await appLock.load();
       await store.load();
       await notesStore.load();
+      // Older imports used Samsung's whole export file name as the note title.
+      // Normalise those once so the notes read like the pages they came from.
+      await NoteImport.repairLegacyTitles(notesStore);
       // Android forgets proximity alerts on reboot; rebuild them from data.
       unawaited(LocationAlerts.syncAll(store.tasks));
       // Secure storage can be cleared independently of the database (device

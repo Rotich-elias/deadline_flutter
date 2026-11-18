@@ -3,10 +3,13 @@ Status: [x] shipped · [~] partial · [ ] not started
 Last reviewed: 18 November 2026
 Local/client features are shipped in 1.0.21+22; server-backed and some native
 integrations remain partial (marked [~] below). Dart format, flutter analyze and
-the full 236-test suite are clean; the release APK was installed and
+the full 236-test suite were clean; that release APK was installed and
 device-verified on the SM-N9600 with app lock still ON (PIN <PIN> + fingerprint).
 All smoke-test data was purged; final baseline: 4 open deadlines, 5 notes (the
 device's own data was preserved), empty test draft.
+A later clickable-link / notebook-page / Samsung Notes import update is built
+with 245 tests clean, but the phone was disconnected before it could be
+installed and verified; those new items are marked [~] below.
 
 Suggested build order
 1. Pin/favourite + priority levels (one schema bump)
@@ -79,6 +82,27 @@ Suggested build order
       deleted; baseline preserved at 3 open deadlines, 7 saved notes, archive
       63 deadlines / 6 notes, locked note masked, app lock still ON (biometric
       prompt + PIN <PIN> accepted).
+• [~] Clickable Links & Notebook Pages:
+      Built 18 Nov 2026 (unreleased): http(s) addresses in note bodies and task
+      notes, and inline [[wiki]] links in note bodies, are tappable and open
+      through the existing platform bridge / link follower. Notes gained a
+      ruled-paper look in cards and the reader, and the Notes tab now defaults
+      to a two-column Pages grid with a persisted List view toggle — the
+      Samsung Notes-style layout chosen by the user. No new dependency, schema
+      or sync change. Four link-tap regression tests added in
+      test/link_tap_test.dart; dart format, flutter analyze and all 245 tests
+      pass. A release APK was built but NOT yet installed/device-verified
+      because the phone was disconnected, so this item stays partial.
+• [~] Samsung Notes Full Import & Title Repair:
+      Built 18 Nov 2026 (unreleased): Samsung Notes text exports are named
+      `<title>_<yymmdd>_<hhmmss>.txt`; the timestamp is now stripped on import
+      and an on-boot repair renames notes imported by older builds. For generic
+      "Notes_…" exports the repair also re-splits the first line out of the
+      body, so re-sharing the same note is recognised as a duplicate. Tests in
+      test/note_import_test.dart cover the new parsing, repair and duplicate
+      path. Built with 245 tests clean but not device-verified yet (phone
+      disconnected); the first 24-note share produced 22 imported notes, so a
+      fresh full share still needs to be checked on the phone.
 • [~] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
       Built 17 Nov 2026 (1.0.10+11): the note editor's "Attach file" button
       picks existing images, PDFs, audio and documents (multi-select, 50 MB

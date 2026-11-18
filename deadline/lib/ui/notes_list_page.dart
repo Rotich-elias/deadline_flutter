@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/notes_store.dart';
 import '../data/task_store.dart';
@@ -13,6 +16,7 @@ import 'archive_page.dart';
 import 'note_import_ui.dart';
 import 'note_card.dart';
 import 'note_form_sheet.dart';
+import 'note_page_card.dart';
 import 'note_lock.dart';
 import 'note_view_page.dart';
 import 'search_field.dart';
@@ -42,6 +46,39 @@ class _NotesListPageState extends State<NotesListPage> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   bool _searching = false;
+
+  /// Notes look like notebook pages by default; the header can switch back to
+  /// the compact list. The choice survives restarts.
+  static const _pagesViewKey = 'notes.pages.view';
+  bool _pagesView = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadViewPreference());
+  }
+
+  Future<void> _loadViewPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() => _pagesView = prefs.getBool(_pagesViewKey) ?? true);
+    } catch (_) {
+      // Preferences are optional; keep the default page view.
+    }
+  }
+
+  void _toggleView() {
+    setState(() => _pagesView = !_pagesView);
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_pagesViewKey, _pagesView);
+      } catch (_) {
+        // Ignore storage failures; the view still works for this session.
+      }
+    }());
+  }
 
   @override
   void dispose() {
@@ -148,7 +185,9 @@ class _NotesListPageState extends State<NotesListPage> {
                   sync: widget.sync,
                   appLock: widget.appLock,
                   searching: _searching,
+                  pagesView: _pagesView,
                   onToggleSearch: _toggleSearch,
+                  onToggleView: _toggleView,
                   onOpenArchive: () => _openArchive(context),
                   onTemplates: () => _createFromTemplate(context),
                   onImportHelp: () => _openImportHelp(context),
@@ -184,34 +223,9 @@ class _NotesListPageState extends State<NotesListPage> {
                       ? _Empty(query: widget.store.query)
                       : RefreshIndicator(
                           onRefresh: widget.sync.syncNow,
-                          child: ListView(
-                            padding: const EdgeInsets.only(top: 8, bottom: 96),
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            children: [
-                              for (final n in notes)
-                                Dismissible(
-                                  key: ValueKey(n.id),
-                                  direction: DismissDirection.endToStart,
-                                  background: Container(
-                                    alignment: Alignment.centerRight,
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 5),
-                                    padding: const EdgeInsets.only(right: 20),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF3A1A22),
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    child: const Icon(Icons.archive_outlined,
-                                        color: Color(0xFFFF6B6B)),
-                                  ),
-                                  onDismissed: (_) => _delete(context, n),
-                                  child: NoteCard(
-                                    note: n,
-                                    onEdit: () => _open(context, n),
-                                  ),
-                                ),
-                            ],
-                          ),
+                          child: _pagesView
+                              ? _pagesGrid(context, notes)
+                              : _list(context, notes),
                         ),
                 ),
               ],
@@ -226,6 +240,62 @@ class _NotesListPageState extends State<NotesListPage> {
       ),
     );
   }
+
+  Widget _dismissible(BuildContext context, Note note, Widget child) =>
+      Dismissible(
+        key: ValueKey(note.id),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.only(right: 20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF3A1A22),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: const Icon(Icons.archive_outlined, color: Color(0xFFFF6B6B)),
+        ),
+        onDismissed: (_) => _delete(context, note),
+        child: child,
+      );
+
+  Widget _list(BuildContext context, List<Note> notes) => ListView(
+        padding: const EdgeInsets.only(top: 8, bottom: 96),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          for (var i = 0; i < notes.length; i++)
+            _dismissible(
+              context,
+              notes[i],
+              NoteCard(
+                note: notes[i],
+                pageNumber: i + 1,
+                onEdit: () => _open(context, notes[i]),
+              ),
+            ),
+        ],
+      );
+
+  Widget _pagesGrid(BuildContext context, List<Note> notes) => GridView.builder(
+        padding: const EdgeInsets.fromLTRB(10, 12, 10, 96),
+        physics: const AlwaysScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 0.68,
+        ),
+        itemCount: notes.length,
+        itemBuilder: (context, i) => _dismissible(
+          context,
+          notes[i],
+          NotePageCard(
+            note: notes[i],
+            pageNumber: i + 1,
+            onEdit: () => _open(context, notes[i]),
+          ),
+        ),
+      );
 }
 
 class _Header extends StatelessWidget {
@@ -234,7 +304,9 @@ class _Header extends StatelessWidget {
     required this.sync,
     required this.appLock,
     required this.searching,
+    required this.pagesView,
     required this.onToggleSearch,
+    required this.onToggleView,
     required this.onOpenArchive,
     required this.onTemplates,
     required this.onImportHelp,
@@ -244,7 +316,9 @@ class _Header extends StatelessWidget {
   final SyncService sync;
   final AppLockService appLock;
   final bool searching;
+  final bool pagesView;
   final VoidCallback onToggleSearch;
+  final VoidCallback onToggleView;
   final VoidCallback onOpenArchive;
   final VoidCallback onTemplates;
   final VoidCallback onImportHelp;
@@ -280,6 +354,14 @@ class _Header extends StatelessWidget {
             onPressed: onToggleSearch,
             icon:
                 Icon(searching ? Icons.close : Icons.search, color: Ink0.muted),
+          ),
+          IconButton(
+            tooltip: pagesView ? 'List view' : 'Pages view',
+            onPressed: onToggleView,
+            icon: Icon(
+              pagesView ? Icons.view_list : Icons.grid_view,
+              color: Ink0.muted,
+            ),
           ),
           IconButton(
             tooltip: 'Archive',

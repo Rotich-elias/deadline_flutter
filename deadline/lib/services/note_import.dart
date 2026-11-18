@@ -122,6 +122,12 @@ class NoteImport {
   /// Leading direction marks and zero-width characters some exports carry.
   static final _leadingMarks = RegExp(r'^[\u200e\u200f\u202a-\u202e\ufeff]+');
 
+  /// Samsung Notes names text exports `<title>_<yymmdd>_<hhmmss>.txt`. The
+  /// timestamp is not part of the title; stripping it keeps "Movies list" out
+  /// of "Movies list _261011_141605" and falls back to the note's first line
+  /// when the rest is just "Notes".
+  static final _exportTimestamp = RegExp(r'[ _]\d{6,8}[ _]\d{4,6}$');
+
   /// File names that say nothing about the note; never use them as a title.
   static const _genericNames = {
     'text',
@@ -180,10 +186,44 @@ class NoteImport {
     if (stem.toLowerCase().endsWith('.txt')) {
       stem = stem.substring(0, stem.length - 4);
     }
-    stem = _cleanLine(stem);
+    return _meaningfulTitle(_cleanLine(stem));
+  }
+
+  static String? _meaningfulTitle(String stem) {
+    stem = stem.replaceFirst(_exportTimestamp, '').trim();
     if (stem.isEmpty || stem.length < 2) return null;
     if (_genericNames.contains(stem.toLowerCase())) return null;
     return stem;
+  }
+
+  /// Repairs notes imported by older builds that used the whole Samsung Notes
+  /// file name ("Books idea_260708_045209") as their title. Safe to run on
+  /// every launch: notes without that timestamp pattern are left untouched.
+  static Future<int> repairLegacyTitles(NotesStore store) async {
+    var repaired = 0;
+    for (final note in List<Note>.from(store.notes)) {
+      final fixed = _repairTitle(note.title, note.body);
+      if (fixed == null ||
+          (fixed.title == note.title && fixed.body == note.body)) {
+        continue;
+      }
+      await store.save(note.copyWith(title: fixed.title, body: fixed.body));
+      repaired++;
+    }
+    return repaired;
+  }
+
+  static ParsedNote? _repairTitle(String title, String? body) {
+    final clean = _cleanLine(title);
+    if (!_exportTimestamp.hasMatch(clean)) return null;
+    final hint = _meaningfulTitle(clean);
+    if (hint != null) return ParsedNote(title: hint, body: body);
+
+    // A generic file name ("Notes_…") meant the old importer used the first
+    // line as the title but left that line in the body too. Re-split the body
+    // so the repaired note matches a fresh import and is not duplicated when
+    // the same Samsung note is shared again.
+    return parse(body ?? '');
   }
 
   static int _splitPoint(String title) {

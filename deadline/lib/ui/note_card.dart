@@ -3,33 +3,35 @@ import 'package:intl/intl.dart';
 
 import '../models/note.dart';
 import '../theme.dart';
+import 'paper_page.dart';
 
 class NoteCard extends StatelessWidget {
-  const NoteCard({super.key, required this.note, required this.onEdit});
+  const NoteCard({
+    super.key,
+    required this.note,
+    required this.onEdit,
+    this.pageNumber,
+  });
 
   final Note note;
   final VoidCallback onEdit;
 
+  /// Shown as "PAGE n" in the corner when the list supplies an index.
+  final int? pageNumber;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      decoration: BoxDecoration(
-        color: Ink0.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: note.pinned
-              ? const Color(0xFFE4C441).withValues(alpha: 0.5)
-              : Ink0.line,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onEdit,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
+          borderRadius: BorderRadius.circular(11),
+          child: PaperPage(
+            pageNumber: pageNumber,
+            pinned: note.pinned,
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

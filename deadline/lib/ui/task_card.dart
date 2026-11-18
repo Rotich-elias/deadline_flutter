@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/task.dart';
+import '../services/platform_bridge.dart';
 import '../theme.dart';
+import '../utils/rich_text.dart';
 import '../utils/urgency.dart';
 
 class TaskCard extends StatelessWidget {
@@ -27,6 +29,15 @@ class TaskCard extends StatelessWidget {
         Priority.low => const Color(0xFF5C8DEF),
         Priority.none => Ink0.muted,
       };
+
+  Future<void> _openLink(BuildContext context, String url) async {
+    final opened = await PlatformBridge.openUrl(url);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open $url')),
+      );
+    }
+  }
 
   String get _shortPriority => switch (task.priority) {
         Priority.high => 'HIGH',
@@ -99,12 +110,16 @@ class TaskCard extends StatelessWidget {
                         ),
                         if ((task.notes ?? '').trim().isNotEmpty) ...[
                           const SizedBox(height: 4),
-                          Text(
-                            task.notes!.trim(),
+                          SelectableText.rich(
+                            buildRichSpan(
+                              task.notes!.trim(),
+                              base: TextStyle(
+                                  fontSize: 13, color: Ink0.muted, height: 1.3),
+                              highlight: const Color(0xFFE4C441),
+                              bullet: Ink0.muted,
+                              onUrlTap: (url) => _openLink(context, url),
+                            ),
                             maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 13, color: Ink0.muted, height: 1.3),
                           ),
                         ],
                         if (task.hasChecklist) ...[
