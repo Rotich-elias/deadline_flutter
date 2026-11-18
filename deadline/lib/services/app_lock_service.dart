@@ -54,6 +54,11 @@ class AppLockService extends ChangeNotifier {
   bool get biometricEnabled => _biometricEnabled;
   bool get biometricsAvailable => _biometricsAvailable;
 
+  /// True when a PIN hash exists, whether or not the app-wide lock is on.
+  /// Locked notes rely on this rather than [enabled]: turning app lock off
+  /// leaves their PIN intact so they can still be opened.
+  bool get pinConfigured => _hash != null && _salt != null;
+
   /// Reads the saved settings and locks the app immediately when app lock is
   /// on, so a cold start never paints the lists before the PIN screen.
   Future<void> load() async {
@@ -110,19 +115,28 @@ class AppLockService extends ChangeNotifier {
     return true;
   }
 
-  /// Turns app lock off. Callers are responsible for clearing note locks,
-  /// because a note lock without an app lock would have no way to unlock it.
+  /// Stores a PIN for locked notes without turning on the app-wide lock.
+  /// Used when the first note is locked while app lock is off.
+  Future<void> setPin(String pin) async {
+    final salt = _newSalt();
+    final hash = hashPin(pin, salt);
+    _salt = salt;
+    _hash = hash;
+    await _write(_keySalt, salt);
+    await _write(_keyHash, hash);
+    notifyListeners();
+  }
+
+  /// Turns off the app-wide lock but keeps the PIN so locked notes remain
+  /// unlockable. The app is no longer gated on launch/background and
+  /// FLAG_SECURE is removed; only note locks still ask for the PIN.
   Future<bool> disable(String pin) async {
     if (!await verifyPin(pin)) return false;
     _enabled = false;
     _locked = false;
     _biometricEnabled = false;
-    _hash = null;
-    _salt = null;
 
     await _delete(_keyEnabled);
-    await _delete(_keyHash);
-    await _delete(_keySalt);
     await _delete(_keyBiometric);
 
     await _applySecureScreen(false);

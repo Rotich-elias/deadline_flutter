@@ -381,7 +381,7 @@ class _Header extends StatelessWidget {
                 case 'paste':
                   onPasteNote();
                 case 'applock':
-                  showAppLockSettings(context, appLock, store);
+                  showAppLockSettings(context, appLock);
                 case 'about':
                   Navigator.of(context).push(MaterialPageRoute<void>(
                     builder: (_) => const AboutPage(),

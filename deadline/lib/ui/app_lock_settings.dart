@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../data/notes_store.dart';
 import '../services/app_lock_service.dart';
 import '../theme.dart';
 import 'pin_pad.dart';
@@ -10,7 +9,6 @@ import 'pin_pad.dart';
 Future<void> showAppLockSettings(
   BuildContext context,
   AppLockService appLock,
-  NotesStore notesStore,
 ) {
   return showModalBottomSheet<void>(
     context: context,
@@ -19,21 +17,20 @@ Future<void> showAppLockSettings(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _AppLockSheet(appLock: appLock, notesStore: notesStore),
+    builder: (_) => _AppLockSheet(appLock: appLock),
   );
 }
 
 class _AppLockSheet extends StatelessWidget {
-  const _AppLockSheet({required this.appLock, required this.notesStore});
+  const _AppLockSheet({required this.appLock});
 
   final AppLockService appLock;
-  final NotesStore notesStore;
 
   Future<void> _setUp(BuildContext context) async {
     final pin = await showPinSheet(
       context,
       title: 'Choose a PIN',
-      subtitle: 'Four digits you will use to unlock the app.',
+      subtitle: 'Four digits you will use to unlock the app and locked notes.',
     );
     if (pin == null || !context.mounted) return;
 
@@ -63,7 +60,7 @@ class _AppLockSheet extends StatelessWidget {
     final pin = await showPinSheet(
       context,
       title: 'Choose a new PIN',
-      subtitle: 'Four digits you will use to unlock the app.',
+      subtitle: 'Four digits you will use to unlock the app and locked notes.',
     );
     if (pin == null || !context.mounted) return;
 
@@ -91,9 +88,8 @@ class _AppLockSheet extends StatelessWidget {
     if (pin == null || !context.mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    // A note lock without app lock would be impossible to open, so turning
-    // app lock off releases every note.
-    await notesStore.clearAllLocks();
+    // The PIN stays behind so locked notes remain unlockable; only the
+    // app-wide gate is removed.
     await appLock.disable(pin);
     if (!context.mounted) return;
 
@@ -101,7 +97,7 @@ class _AppLockSheet extends StatelessWidget {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(
-        content: Text('App lock is off. Locked notes were unlocked.'),
+        content: Text('App lock is off. Locked notes still need your PIN.'),
       ));
   }
 
@@ -201,9 +197,12 @@ class _AppLockSheet extends StatelessWidget {
                 const SizedBox(height: 18),
                 if (!on) ...[
                   Text(
-                    'Protect the whole app with a four-digit PIN. You can also '
-                    'lock individual notes; they stay masked in the list and '
-                    'are left out of search results.',
+                    appLock.pinConfigured
+                        ? 'A PIN is already set for locked notes. Turn on app '
+                            'lock to also lock the whole app when you leave it.'
+                        : 'Protect the whole app with a four-digit PIN. You '
+                            'can also lock individual notes; they stay masked '
+                            'in the list and are left out of search results.',
                     style: TextStyle(
                         fontSize: 13.5, color: Ink0.muted, height: 1.5),
                   ),
@@ -217,11 +216,27 @@ class _AppLockSheet extends StatelessWidget {
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('Set up app lock',
-                          style: TextStyle(
+                      child: Text(
+                          appLock.pinConfigured
+                              ? 'Turn on app lock'
+                              : 'Set up app lock',
+                          style: const TextStyle(
                               fontSize: 15, fontWeight: FontWeight.w600)),
                     ),
                   ),
+                  if (appLock.pinConfigured) ...[
+                    const SizedBox(height: 8),
+                    _ActionRow(
+                      icon: Icons.password,
+                      label: 'Change note PIN',
+                      onTap: () => _changePin(context),
+                    ),
+                    Text(
+                      'This PIN also unlocks notes even when app lock is off.',
+                      style: TextStyle(
+                          fontSize: 12, color: Ink0.muted, height: 1.45),
+                    ),
+                  ],
                 ] else ...[
                   SwitchListTile.adaptive(
                     value: appLock.biometricEnabled,
@@ -265,9 +280,10 @@ class _AppLockSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Turning app lock off also unlocks every locked note. '
-                    'The PIN itself is never stored; only a salted hash is '
-                    'kept in the phone\'s secure storage.',
+                    'Turning app lock off keeps your PIN for locked notes; '
+                    'only the app-wide lock is removed. The PIN itself is '
+                    'never stored; only a salted hash is kept in the phone\'s '
+                    'secure storage.',
                     style: TextStyle(
                         fontSize: 12, color: Ink0.muted, height: 1.45),
                   ),

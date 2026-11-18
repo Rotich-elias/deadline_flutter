@@ -356,7 +356,7 @@ class _Header extends StatelessWidget {
               } else if (v == 'appearance') {
                 showAppearanceSettings(context, appTheme);
               } else if (v == 'applock') {
-                showAppLockSettings(context, appLock, notesStore);
+                showAppLockSettings(context, appLock);
               } else if (v == 'about') {
                 Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const AboutPage(),

@@ -6,8 +6,11 @@ import 'package:deadline/models/note.dart';
 import 'package:deadline/services/app_lock_service.dart';
 import 'package:deadline/theme.dart';
 import 'package:deadline/ui/note_card.dart';
+import 'package:deadline/ui/note_lock.dart';
+import 'package:deadline/ui/note_view_page.dart';
 import 'package:deadline/ui/pin_pad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// [NotesStore.load] only needs these three reads; the database connection
@@ -25,6 +28,12 @@ class _FakeNotesDb extends LocalDb {
 
   @override
   Future<List<String>> distinctNoteTags() async => const [];
+
+  @override
+  Future<void> setNoteLocked(String id, bool locked) async {
+    final index = items.indexWhere((n) => n.id == id);
+    if (index >= 0) items[index] = items[index].copyWith(locked: locked);
+  }
 }
 
 Note _lockedNote() => Note(
@@ -207,6 +216,127 @@ void main() {
       expect(decoded.locked, isFalse);
       expect(decoded.title, 'Plain');
       expect(decoded.body, 'Body');
+    });
+  });
+
+  group('a note PIN works without app lock', () {
+    setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+    test('setPin stores a PIN without enabling or locking the app', () async {
+      final lock = AppLockService();
+      await lock.load();
+      expect(lock.pinConfigured, isFalse);
+
+      await lock.setPin('1234');
+      expect(lock.pinConfigured, isTrue);
+      expect(lock.enabled, isFalse);
+      expect(lock.locked, isFalse);
+      expect(await lock.verifyPin('1234'), isTrue);
+      expect(await lock.verifyPin('4321'), isFalse);
+    });
+
+    test('turning app lock off keeps the PIN and note locks', () async {
+      final lock = AppLockService();
+      await lock.load();
+      await lock.enable('1234');
+      expect(lock.enabled, isTrue);
+
+      expect(await lock.disable('1234'), isTrue);
+      expect(lock.enabled, isFalse);
+      expect(lock.locked, isFalse);
+      expect(lock.pinConfigured, isTrue);
+      expect(await lock.verifyPin('1234'), isTrue);
+
+      // A cold start with app lock off must not drop the note PIN.
+      final reloaded = AppLockService();
+      await reloaded.load();
+      expect(reloaded.enabled, isFalse);
+      expect(reloaded.pinConfigured, isTrue);
+      expect(await reloaded.verifyPin('1234'), isTrue);
+    });
+
+    testWidgets('a locked note still asks for its PIN with app lock off',
+        (tester) async {
+      final lock = AppLockService();
+      await lock.load();
+      await lock.setPin('1234');
+      expect(lock.enabled, isFalse);
+
+      bool? opened;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildTheme(Brightness.dark),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () async =>
+                  opened = await confirmNoteAccess(context, lock),
+              child: const Text('Open note'),
+            ),
+          ),
+        ),
+      ));
+
+      Future<void> enter(String pin) async {
+        for (final digit in pin.split('')) {
+          await tester.tap(find.text(digit).last);
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.text('Open note'));
+      await tester.pumpAndSettle();
+      expect(find.text('Locked note'), findsOneWidget);
+
+      await enter('4321');
+      expect(find.text('Wrong PIN'), findsOneWidget);
+      expect(opened, isNull);
+
+      await enter('1234');
+      expect(opened, isTrue);
+    });
+
+    testWidgets('locking a note creates a PIN without turning app lock on',
+        (tester) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final lock = AppLockService();
+      await lock.load();
+      final store = NotesStore(_FakeNotesDb([
+        Note(id: 'n1', title: 'Private', body: 'Secret'),
+      ]));
+      await store.load();
+
+      await tester.pumpWidget(MaterialApp(
+        theme: buildTheme(Brightness.dark),
+        home: NoteViewPage(store: store, noteId: 'n1', appLock: lock),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Lock note'));
+      await tester.pumpAndSettle();
+      expect(find.text('Create a note PIN'), findsOneWidget);
+
+      await tester.tap(find.text('Create PIN'));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose a note PIN'), findsOneWidget);
+
+      Future<void> enter(String pin) async {
+        for (final digit in pin.split('')) {
+          await tester.tap(find.text(digit).last);
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+      }
+
+      await enter('1234');
+      expect(find.text('Confirm your note PIN'), findsOneWidget);
+      await enter('1234');
+      await tester.pumpAndSettle();
+
+      expect(lock.pinConfigured, isTrue);
+      expect(lock.enabled, isFalse);
+      expect(await lock.verifyPin('1234'), isTrue);
+      expect(store.notes.single.locked, isTrue);
     });
   });
 }

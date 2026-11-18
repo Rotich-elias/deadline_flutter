@@ -96,10 +96,11 @@ class _DeadlineBootstrapState extends State<DeadlineBootstrap> {
       // Android forgets proximity alerts on reboot; rebuild them from data.
       unawaited(LocationAlerts.syncAll(store.tasks));
       // Secure storage can be cleared independently of the database (device
-      // transfer, "clear data" on some ROMs). A note lock without an app PIN
-      // could never be opened again, so release any orphans. The update is a
-      // no-op when nothing is locked.
-      if (!appLock.enabled) await notesStore.clearAllLocks();
+      // transfer, "clear data" on some ROMs). A note lock without any PIN
+      // could never be opened again, so release only those orphans. A PIN kept
+      // after turning app lock off is enough, so those notes stay locked.
+      // The update is a no-op when nothing is locked.
+      if (!appLock.pinConfigured) await notesStore.clearAllLocks();
       await sync.loadSettings();
       await appTheme.load();
       // Consume the launcher shortcut flag once, at startup. HomeShell waits

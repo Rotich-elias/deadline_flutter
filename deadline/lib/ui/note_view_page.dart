@@ -13,7 +13,6 @@ import '../theme.dart';
 import '../utils/linking.dart';
 import '../utils/markup.dart';
 import '../utils/rich_text.dart';
-import 'app_lock_settings.dart';
 import 'note_form_sheet.dart';
 import 'note_lock.dart';
 import 'paper_page.dart';
@@ -58,33 +57,10 @@ class NoteViewPage extends StatelessWidget {
   }
 
   Future<void> _toggleLock(BuildContext context, Note note) async {
-    if (!appLock.enabled) {
-      final setUp = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          backgroundColor: Ink0.surface,
-          title: const Text('Set up app lock first'),
-          content: const Text(
-            'A note lock uses the app PIN. Turn on app lock, then lock this '
-            'note from this button.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Not now'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Set up'),
-            ),
-          ],
-        ),
-      );
-      if (setUp == true && context.mounted) {
-        await showAppLockSettings(context, appLock, store);
-      }
-      return;
-    }
+    // A note lock only needs a PIN, not the app-wide lock. If no PIN exists
+    // yet, create one here without turning app lock on.
+    if (!await ensureNotePin(context, appLock)) return;
+    if (!context.mounted) return;
 
     if (note.locked && !await confirmNoteAccess(context, appLock)) return;
 

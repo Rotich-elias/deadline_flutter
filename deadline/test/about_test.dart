@@ -26,7 +26,7 @@ void main() {
         calls.add(call);
         switch (call.method) {
           case 'appVersion':
-            return '1.0.23+24';
+            return '1.0.24+25';
           case 'openUrl':
             return true;
           default:
@@ -42,7 +42,7 @@ void main() {
 
     expect(find.text('About'), findsOneWidget);
     expect(find.text('Deadlines&Notes'), findsOneWidget);
-    expect(find.text('Version 1.0.23+24'), findsOneWidget);
+    expect(find.text('Version 1.0.24+25'), findsOneWidget);
     expect(find.text(Company.websiteLabel), findsOneWidget);
     expect(calls.any((c) => c.method == 'appVersion'), isTrue);
   });

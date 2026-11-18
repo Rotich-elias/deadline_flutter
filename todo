@@ -1,9 +1,9 @@
 Deadlines&Notes — feature backlog
 Status: [x] shipped · [~] partial · [ ] not started
-Last reviewed: 18 November 2026
-Local/client features are shipped in 1.0.23+24; server-backed and some native
+Last reviewed: 19 November 2026
+Local/client features are shipped in 1.0.24+25; server-backed and some native
 integrations remain partial (marked [~] below). Dart format, flutter analyze and
-the full 264-test suite are clean. The 1.0.22+23 release APK was installed and
+the full 268-test suite are clean. The 1.0.22+23 release APK was installed and
 device-verified on the SM-N9600 with app lock still ON (PIN <PIN> + fingerprint).
 The 18 Nov 2026 work (clickable links / notebook pages / Samsung import fix /
 notification actions) was included in 1.0.22+23 with 248 tests clean.
@@ -19,6 +19,16 @@ no longer dropped and the boot-time duplicate purge requires both title and
 body to match. Dart format, analyze and all 264 tests are clean. The user
 personally confirmed Voice memo and Transcribe work on the device, so Multimedia
 Attachments and AI & Smart Extraction are now fully verified.
+Per-note locking without app lock shipped in 1.0.24+25 (19 Nov 2026): a note can
+be locked with its own setup step that creates a PIN but leaves app lock off.
+The PIN is now kept when app lock is turned off, and locked notes stay locked;
+app-wide launch gating and FLAG_SECURE still follow app lock. Four new tests
+cover the PIN lifecycle and the lock-note flow (268 total).
+Device check 19 Nov 2026: 1.0.24+25 installed and launched successfully
+(versionName=1.0.24, versionCode=25). App lock was already OFF on the phone at
+install time (no PIN gate, no SECURE window flag), so the app-lock gate check
+did not apply. The note-only PIN flow was not exercised on device because no
+user-authorized PIN was available; it is covered by the four new tests.
 
 Suggested build order
 1. Pin/favourite + priority levels (one schema bump)
