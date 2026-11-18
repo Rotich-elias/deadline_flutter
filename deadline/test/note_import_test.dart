@@ -10,6 +10,7 @@ class _FakeNotesStore extends NotesStore {
   final List<Note> _all;
   final List<Note> added = [];
   final List<Note> saved = [];
+  final List<Note> purged = [];
 
   @override
   List<Note> get notes => List.unmodifiable(_all);
@@ -28,6 +29,12 @@ class _FakeNotesStore extends NotesStore {
     saved.add(n);
     final i = _all.indexWhere((old) => old.id == n.id);
     if (i >= 0) _all[i] = n;
+  }
+
+  @override
+  Future<void> purge(Note n) async {
+    purged.add(n);
+    _all.removeWhere((old) => old.id == n.id);
   }
 }
 
@@ -134,6 +141,15 @@ void main() {
       expect(parsed!.title, 'Shopping list');
       expect(parsed.body, 'Sugar\nMilk');
     });
+
+    test('ignores the copy suffix Samsung adds to a repeated export', () {
+      final parsed = NoteImport.parse(
+        'If I was God for a day',
+        name: 'Books idea_260708_045209 (1).txt',
+      );
+      expect(parsed!.title, 'Books idea');
+      expect(parsed.body, 'If I was God for a day');
+    });
   });
 
   group('repairing older imports', () {
@@ -177,6 +193,28 @@ void main() {
 
       expect(outcome.imported, 0);
       expect(outcome.duplicates, 1);
+    });
+
+    test('purges the newer copy left by a repeated Samsung export', () async {
+      final original = Note(
+        id: 'old',
+        title: 'Shopping list',
+        body: 'Sugar\nMilk',
+        updatedAt: DateTime.utc(2026, 11, 18, 7),
+      );
+      final duplicate = Note(
+        id: 'new',
+        title: 'Notes_240429_030544 (1)',
+        body: 'Shopping list\nSugar\nMilk',
+        updatedAt: DateTime.utc(2026, 11, 18, 9),
+      );
+      final store = _FakeNotesStore([original, duplicate]);
+
+      await NoteImport.repairLegacyTitles(store);
+
+      expect(store.purged.single.id, 'new');
+      expect(store.notes.map((n) => n.id), ['old']);
+      expect(store.saved, isEmpty);
     });
   });
 

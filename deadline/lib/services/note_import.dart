@@ -128,6 +128,11 @@ class NoteImport {
   /// when the rest is just "Notes".
   static final _exportTimestamp = RegExp(r'[ _]\d{6,8}[ _]\d{4,6}$');
 
+  /// Samsung adds " (1)", " (2)" … when exporting the same note again to a
+  /// folder that already holds the earlier file. Strip it before the timestamp
+  /// so re-shares keep the same title and are recognised as duplicates.
+  static final _copySuffix = RegExp(r'\s*\(\d+\)$');
+
   /// File names that say nothing about the note; never use them as a title.
   static const _genericNames = {
     'text',
@@ -186,6 +191,7 @@ class NoteImport {
     if (stem.toLowerCase().endsWith('.txt')) {
       stem = stem.substring(0, stem.length - 4);
     }
+    stem = stem.replaceFirst(_copySuffix, '');
     return _meaningfulTitle(_cleanLine(stem));
   }
 
@@ -197,24 +203,48 @@ class NoteImport {
   }
 
   /// Repairs notes imported by older builds that used the whole Samsung Notes
-  /// file name ("Books idea_260708_045209") as their title. Safe to run on
-  /// every launch: notes without that timestamp pattern are left untouched.
+  /// file name ("Books idea_260708_045209") as their title. Also removes
+  /// duplicates left by a re-share whose file names gained Samsung's " (1)"
+  /// copy suffix. Safe to run on every launch: notes without the Samsung
+  /// import pattern are left untouched.
   static Future<int> repairLegacyTitles(NotesStore store) async {
-    var repaired = 0;
-    for (final note in List<Note>.from(store.notes)) {
+    var changed = 0;
+    final removedIds = <String>{};
+    final all = List<Note>.from(store.notes);
+    final archived = List<Note>.from(store.archived);
+
+    for (final note in all) {
+      if (removedIds.contains(note.id)) continue;
       final fixed = _repairTitle(note.title, note.body);
-      if (fixed == null ||
-          (fixed.title == note.title && fixed.body == note.body)) {
+      if (fixed == null) continue;
+
+      final key = _key(fixed.title, fixed.body);
+      Note? twin;
+      for (final other in [...all, ...archived]) {
+        if (other.id == note.id || removedIds.contains(other.id)) continue;
+        if (_key(other.title, other.body) == key) {
+          twin = other;
+          break;
+        }
+      }
+      if (twin != null) {
+        // Keep the older copy and purge the newer re-share artifact.
+        final drop = note.updatedAt.isBefore(twin.updatedAt) ? twin : note;
+        removedIds.add(drop.id);
+        await store.purge(drop);
+        changed++;
         continue;
       }
+
+      if (fixed.title == note.title && fixed.body == note.body) continue;
       await store.save(note.copyWith(title: fixed.title, body: fixed.body));
-      repaired++;
+      changed++;
     }
-    return repaired;
+    return changed;
   }
 
   static ParsedNote? _repairTitle(String title, String? body) {
-    final clean = _cleanLine(title);
+    final clean = _cleanLine(title).replaceFirst(_copySuffix, '').trim();
     if (!_exportTimestamp.hasMatch(clean)) return null;
     final hint = _meaningfulTitle(clean);
     if (hint != null) return ParsedNote(title: hint, body: body);
