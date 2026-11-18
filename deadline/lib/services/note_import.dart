@@ -93,12 +93,20 @@ class SharedNotesInbox extends ChangeNotifier {
 }
 
 class ImportOutcome {
-  const ImportOutcome({required this.imported, required this.duplicates});
+  const ImportOutcome({
+    required this.imported,
+    required this.duplicates,
+    this.blank = 0,
+  });
 
   final int imported;
   final int duplicates;
 
-  bool get isEmpty => imported == 0;
+  /// Shared files with no usable text and no title in their name. Counted so
+  /// the UI can say they were skipped instead of failing silently.
+  final int blank;
+
+  bool get isEmpty => imported == 0 && blank == 0;
 }
 
 class ParsedNote {
@@ -148,17 +156,26 @@ class NoteImport {
     var text = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     if (text.startsWith('\ufeff')) text = text.substring(1);
 
+    final hint = _titleFromName(name);
     final lines = text.split('\n');
     var start = 0;
     while (start < lines.length && lines[start].trim().isEmpty) {
       start++;
     }
-    if (start >= lines.length) return null;
+    if (start >= lines.length) {
+      // Samsung exports a title-only note as an empty text file. The title is
+      // still in the file name, so keep the note instead of dropping it.
+      if (hint != null) return ParsedNote(title: hint);
+      return null;
+    }
 
     final firstLine = _cleanLine(lines[start]);
-    if (firstLine.isEmpty) return null;
+    if (firstLine.isEmpty) {
+      if (hint == null) return null;
+      final rest = lines.sublist(start + 1).join('\n').trim();
+      return ParsedNote(title: hint, body: rest.isEmpty ? null : rest);
+    }
 
-    final hint = _titleFromName(name);
     final useHint =
         hint != null && hint.toLowerCase() != firstLine.toLowerCase();
 
@@ -277,9 +294,14 @@ class NoteImport {
 
     var imported = 0;
     var duplicates = 0;
+    var blank = 0;
     for (final share in shares) {
       final parsed = parse(share.text, name: share.name);
-      if (parsed == null) continue;
+      if (parsed == null) {
+        blank++;
+        debugPrint('Skipped empty shared note: ${share.name ?? '(no name)'}');
+        continue;
+      }
       if (!seen.add(_key(parsed.title, parsed.body))) {
         duplicates++;
         continue;
@@ -287,6 +309,10 @@ class NoteImport {
       await store.add(Note.create(title: parsed.title, body: parsed.body));
       imported++;
     }
-    return ImportOutcome(imported: imported, duplicates: duplicates);
+    return ImportOutcome(
+      imported: imported,
+      duplicates: duplicates,
+      blank: blank,
+    );
   }
 }

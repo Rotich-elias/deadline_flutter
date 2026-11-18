@@ -1,17 +1,24 @@
 Deadlines&Notes — feature backlog
 Status: [x] shipped · [~] partial · [ ] not started
 Last reviewed: 18 November 2026
-Local/client features are shipped in 1.0.22+23; server-backed and some native
+Local/client features are shipped in 1.0.23+24; server-backed and some native
 integrations remain partial (marked [~] below). Dart format, flutter analyze and
-the full 248-test suite are clean. The final release APK was installed and
+the full 264-test suite are clean. The 1.0.22+23 release APK was installed and
 device-verified on the SM-N9600 with app lock still ON (PIN <PIN> + fingerprint).
 The 18 Nov 2026 work (clickable links / notebook pages / Samsung import fix /
-notification actions) is included in 1.0.22+23 with 248 tests clean.
+notification actions) was included in 1.0.22+23 with 248 tests clean.
 Device-verified: 27 notes with clean titles after the Samsung re-share fix, Pages
 grid default with a persisted List toggle, notification "Mark done" completing a
 task and "Snooze 1h" scheduling an alarm exactly one hour later, and FLAG_SECURE
 plus the app-lock gate still active. The user is personally verifying the
-imported note contents, so those items stay partial until they confirm.
+imported note contents, so that item stays partial until they confirm.
+Follow-up shipped in 1.0.23+24 (18 Nov 2026): permission revocation now reports a
+clear UI reason on the camera, microphone, calendar and location bridges
+(including background location for geofences); Samsung title-only exports are
+no longer dropped and the boot-time duplicate purge requires both title and
+body to match. Dart format, analyze and all 264 tests are clean. The user
+personally confirmed Voice memo and Transcribe work on the device, so Multimedia
+Attachments and AI & Smart Extraction are now fully verified.
 
 Suggested build order
 1. Pin/favourite + priority levels (one schema bump)
@@ -112,8 +119,15 @@ Suggested build order
       created 49 notes with " (1)" titles, then the new build cleaned them back
       to 27 notes with readable titles (Lapi, Ludo idea, Equity me, …) and no
       timestamped titles. The first 24-note share produced 22 imported notes;
-      the user is verifying copied contents personally, so this stays partial.
-• [~] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
+      the two skipped notes were not recorded at the time, but the likely cause
+      was title-only exports with an empty body, which the parser dropped before
+      it looked at the file name. That is fixed in 1.0.23+24: a
+      title-only export now keeps the title from its file name, and skipped
+      empty files are counted in the import snackbar instead of vanishing.
+      The boot purge matches on title AND body; a regression test proves two
+      different notes with the same title are both kept. The user is still
+      verifying copied contents personally, so this stays partial.
+• [x] Multimedia Attachments: Embed images, PDFs, audio voice memos, and scanned documents directly into notes.
       Built 17 Nov 2026 (1.0.10+11): the note editor's "Attach file" button
       picks existing images, PDFs, audio and documents (multi-select, 50 MB
       cap) and copies them into the app's own storage. Notes show a file-count
@@ -145,8 +159,11 @@ Suggested build order
       on the SM-N9600 with "Don't keep activities" ON and app lock ON: Photo
       opened the camera, capture returned without crashing, the draft and photo
       were restored after the app process was killed mid-capture, and the app
-      lock stayed ON. Voice memo and Transcribe were not exercised end-to-end
-      on the device, so this item remains partial.
+      lock stayed ON. Voice memo and Transcribe were personally confirmed
+      working on the device by the user on 18 Nov 2026, so every part of this
+      item is now verified. Permission revocation handling was hardened 18 Nov
+      2026 (see the top note): each bridge failure now replies with a reason the
+      UI shows instead of a silent null/false.
 • [x] Web Clipping: Save articles or web pages straight from a browser into your notebook.
       Shipped 18 Nov 2026 (1.0.20+21): the note form's "Clip URL" button accepts
       a pasted article URL/title and fills an editable note draft (title, body,
@@ -388,7 +405,7 @@ Suggested build order
       card, title/body/tag all absent from search, PIN re-open), and turning
       app lock off clearing note locks. Test note removed and original app-lock
       state (PIN <PIN> + fingerprint) restored afterwards.
-• [~] AI & Smart Extraction: Automatically transcribe meetings, extract action items from text, or suggest schedule blocks.
+• [x] AI & Smart Extraction: Automatically transcribe meetings, extract action items from text, or suggest schedule blocks.
       First slice shipped 17 Nov 2026 (1.0.15+16): a local, on-device paste box
       in the task form. It recognises relative/ISO/slash/named dates, times,
       hashtags or "Tag:" lines and checklist markers (-, *, •, [ ], 1.), then
@@ -411,9 +428,9 @@ Suggested build order
       and "Plan" opens the normal task form with that time pre-filled. The
       scheduler is pure Dart in test/schedule_suggestions_test.dart; no calendar
       permission, network, API key or new dependency. Device-verified: My Day
-      showed Today 8:00/9:00/10:00 AM focus blocks. The Transcribe control was
-      only confirmed present, not exercised end-to-end, so this item stays
-      partial.
+      showed Today 8:00/9:00/10:00 AM focus blocks. The user personally confirmed
+      Transcribe works end-to-end on the device on 18 Nov 2026, so every part of
+      this item is now verified.
 
 Already shipped beyond this list
 • Archive with undo and permanent delete

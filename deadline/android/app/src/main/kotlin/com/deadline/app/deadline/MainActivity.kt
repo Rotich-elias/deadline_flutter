@@ -57,6 +57,8 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingTranscriptResult: MethodChannel.Result? = null
     private var pendingPermissionAction: (() -> Unit)? = null
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private var pendingPermissionCode: String? = null
+    private var pendingPermissionMessage: String? = null
     private var recorder: MediaRecorder? = null
     private var audioPath: String? = null
     private var quickNoteLaunch = false
@@ -69,6 +71,7 @@ class MainActivity : FlutterFragmentActivity() {
         private const val REQ_CALENDAR_READ = 704
         private const val REQ_CALENDAR_WRITE = 705
         private const val REQ_LOCATION = 706
+        private const val REQ_BACKGROUND_LOCATION = 707
         private const val LOCATION_CHANNEL = "deadline_location"
         private const val QUICK_NOTE_EXTRA = "deadline_quick_note"
         private const val CAPTURE_PREFS = "deadline_capture"
@@ -302,10 +305,13 @@ class MainActivity : FlutterFragmentActivity() {
         // Samsung's camera refuses to start when the caller has not been granted
         // CAMERA at runtime. Ask first, then launch from the permission callback.
         if (!hasPermission(Manifest.permission.CAMERA)) {
-            pendingPermissionAction = { launchCamera(result) }
-            pendingPermissionResult = result
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.CAMERA), REQ_CAMERA
+            requestPermission(
+                Manifest.permission.CAMERA,
+                REQ_CAMERA,
+                "camera_permission",
+                "Camera access is off. Allow Camera in Settings to take a photo.",
+                { launchCamera(result) },
+                result,
             )
             return
         }
@@ -379,12 +385,53 @@ class MainActivity : FlutterFragmentActivity() {
     private fun hasPermission(permission: String) =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
+    /** A refused or revoked permission must answer the waiting Dart call with
+     * a reason the UI can show, never a silent null/false. */
+    private fun fail(result: MethodChannel.Result, code: String, message: String) =
+        result.error(code, message, null)
+
+    /** Remembers what to do (and what to say) when a request is denied, then
+     * asks Android. [pendingPermission*] is a single slot because only one
+     * feature can be waiting on the user at a time. */
+    private fun requestPermission(
+        permission: String,
+        requestCode: Int,
+        errorCode: String,
+        errorMessage: String,
+        action: () -> Unit,
+        result: MethodChannel.Result,
+    ) {
+        pendingPermissionAction = action
+        pendingPermissionResult = result
+        pendingPermissionCode = errorCode
+        pendingPermissionMessage = errorMessage
+        ActivityCompat.requestPermissions(this, arrayOf(permission), requestCode)
+    }
+
+    private fun requestPermissions(
+        permissions: Array<String>,
+        requestCode: Int,
+        errorCode: String,
+        errorMessage: String,
+        action: () -> Unit,
+        result: MethodChannel.Result,
+    ) {
+        pendingPermissionAction = action
+        pendingPermissionResult = result
+        pendingPermissionCode = errorCode
+        pendingPermissionMessage = errorMessage
+        ActivityCompat.requestPermissions(this, permissions, requestCode)
+    }
+
     private fun startRecording(result: MethodChannel.Result) {
         if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
-            pendingPermissionAction = { startRecording(result) }
-            pendingPermissionResult = result
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.RECORD_AUDIO), REQ_AUDIO
+            requestPermission(
+                Manifest.permission.RECORD_AUDIO,
+                REQ_AUDIO,
+                "microphone_permission",
+                "Microphone access is off. Allow Microphone in Settings to record a voice memo.",
+                { startRecording(result) },
+                result,
             )
             return
         }
@@ -404,9 +451,16 @@ class MainActivity : FlutterFragmentActivity() {
             recorder = mediaRecorder
             audioPath = file.absolutePath
             result.success(file.absolutePath)
+        } catch (e: SecurityException) {
+            Log.w("DeadlineAudio", "Microphone permission was revoked", e)
+            fail(
+                result,
+                "microphone_permission",
+                "Microphone access was revoked. Allow it in Settings to record.",
+            )
         } catch (e: Exception) {
             Log.w("DeadlineAudio", "Could not start recorder", e)
-            result.success(null)
+            fail(result, "audio_failed", "The recorder could not start: ${e.message ?: "unknown error"}")
         }
     }
 
@@ -422,6 +476,8 @@ class MainActivity : FlutterFragmentActivity() {
         null
     }
 
+    /** Transcription goes through Android's own speech recogniser, which asks
+     * for the microphone itself; our app never holds RECORD_AUDIO for it. */
     private fun transcribe(result: MethodChannel.Result) {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -432,7 +488,7 @@ class MainActivity : FlutterFragmentActivity() {
             putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak the meeting notes…")
         }
         if (intent.resolveActivity(packageManager) == null) {
-            result.success(null)
+            fail(result, "speech_unavailable", "No speech-to-text app is installed on this phone.")
             return
         }
         pendingTranscriptResult = result
@@ -477,16 +533,26 @@ class MainActivity : FlutterFragmentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         val granted = grantResults.isNotEmpty() &&
             grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        val code = pendingPermissionCode
+        val message = pendingPermissionMessage
+        pendingPermissionCode = null
+        pendingPermissionMessage = null
         if (!granted) {
-            // A denied permission still has to answer the waiting Dart call.
+            // A denied permission still has to answer the waiting Dart call,
+            // with a reason the UI can display instead of a silent null.
             pendingPermissionAction = null
-            pendingPermissionResult?.success(null)
+            pendingPermissionResult?.error(
+                code ?: "permission_denied",
+                message ?: "A permission is needed for this feature.",
+                null,
+            )
             pendingPermissionResult = null
             return
         }
         pendingPermissionResult = null
-        pendingPermissionAction?.invoke()
+        val action = pendingPermissionAction
         pendingPermissionAction = null
+        action?.invoke()
     }
 
     // --- Location alerts and device calendar ---------------------------
@@ -495,15 +561,16 @@ class MainActivity : FlutterFragmentActivity() {
         if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) &&
             !hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
         ) {
-            pendingPermissionAction = { currentLocation(result) }
-            pendingPermissionResult = result
-            ActivityCompat.requestPermissions(
-                this,
+            requestPermissions(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
                 ),
-                REQ_LOCATION
+                REQ_LOCATION,
+                "location_permission",
+                "Location access is off. Allow Location in Settings for place reminders.",
+                { currentLocation(result) },
+                result,
             )
             return
         }
@@ -540,30 +607,54 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun addProximityAlert(call: MethodCall, result: MethodChannel.Result) {
-        val id = call.argument<String>("id") ?: run { result.success(false); return }
-        val lat = call.argument<Double>("latitude") ?: run { result.success(false); return }
-        val lon = call.argument<Double>("longitude") ?: run { result.success(false); return }
+        val id = call.argument<String>("id") ?: run { fail(result, "geofence_failed", "The place reminder is missing its id."); return }
+        val lat = call.argument<Double>("latitude") ?: run { fail(result, "geofence_failed", "The place reminder is missing its latitude."); return }
+        val lon = call.argument<Double>("longitude") ?: run { fail(result, "geofence_failed", "The place reminder is missing its longitude."); return }
         val radius = call.argument<Double>("radiusMeters") ?: 200.0
         val label = call.argument<String>("label") ?: "Deadline nearby"
         if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
-            pendingPermissionAction = { addProximityAlert(call, result) }
-            pendingPermissionResult = result
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), REQ_LOCATION
+            requestPermission(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                REQ_LOCATION,
+                "location_permission",
+                "Location access is off. Allow Location in Settings for place reminders.",
+                { addProximityAlert(call, result) },
+                result,
             )
             return
         }
-        result.success(try {
+        // Android 10+ needs background location for an alert to fire while the
+        // app is closed. Ask separately so a foreground grant never hides it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            !hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        ) {
+            requestPermission(
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                REQ_BACKGROUND_LOCATION,
+                "background_location_permission",
+                "Choose “Allow all the time” in Settings so place reminders work when the app is closed.",
+                { addProximityAlert(call, result) },
+                result,
+            )
+            return
+        }
+        val ok = try {
             val pending = proximityPending(id, label)
             val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             @Suppress("MissingPermission")
             manager.addProximityAlert(lat, lon, radius.toFloat(), -1, pending)
             proximityIntents.add(pending)
             true
+        } catch (e: SecurityException) {
+            Log.w("DeadlineGeofence", "Location permission was revoked", e)
+            fail(result, "location_permission", "Location access was revoked. Allow it in Settings for place reminders.")
+            return
         } catch (e: Exception) {
             Log.w("DeadlineGeofence", "Could not add proximity alert", e)
-            false
-        })
+            fail(result, "geofence_failed", "The place reminder could not be set.")
+            return
+        }
+        result.success(ok)
     }
 
     private fun clearProximityAlerts(call: MethodCall, result: MethodChannel.Result) {
@@ -573,16 +664,19 @@ class MainActivity : FlutterFragmentActivity() {
         } else {
             ids.map { proximityPending(it, "") }
         }
-        result.success(try {
+        try {
             val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             @Suppress("MissingPermission")
             targets.forEach(manager::removeProximityAlert)
             proximityIntents.clear()
-            true
+            result.success(true)
+        } catch (e: SecurityException) {
+            Log.w("DeadlineGeofence", "Location permission was revoked while clearing", e)
+            fail(result, "location_permission", "Location access was revoked. Allow it in Settings to manage place reminders.")
         } catch (e: Exception) {
             Log.w("DeadlineGeofence", "Could not clear proximity alerts", e)
-            false
-        })
+            fail(result, "geofence_failed", "The place reminders could not be cleared.")
+        }
     }
 
     private val eventProjection = arrayOf(
@@ -593,10 +687,13 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun calendarEvents(call: MethodCall, result: MethodChannel.Result) {
         if (!hasPermission(Manifest.permission.READ_CALENDAR)) {
-            pendingPermissionAction = { calendarEvents(call, result) }
-            pendingPermissionResult = result
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.READ_CALENDAR), REQ_CALENDAR_READ
+            requestPermission(
+                Manifest.permission.READ_CALENDAR,
+                REQ_CALENDAR_READ,
+                "calendar_permission",
+                "Calendar access is off. Allow Calendar in Settings to import deadlines.",
+                { calendarEvents(call, result) },
+                result,
             )
             return
         }
@@ -621,25 +718,34 @@ class MainActivity : FlutterFragmentActivity() {
                     )
                 }
             }
+        } catch (e: SecurityException) {
+            Log.w("DeadlineCalendar", "Calendar permission was revoked", e)
+            fail(result, "calendar_permission", "Calendar access was revoked. Allow it in Settings to import deadlines.")
+            return
         } catch (e: Exception) {
             Log.w("DeadlineCalendar", "Could not read calendar", e)
+            fail(result, "calendar_read_failed", "Could not read the device calendar.")
+            return
         }
         result.success(events)
     }
 
     private fun addCalendarEvent(call: MethodCall, result: MethodChannel.Result) {
         if (!hasPermission(Manifest.permission.WRITE_CALENDAR)) {
-            pendingPermissionAction = { addCalendarEvent(call, result) }
-            pendingPermissionResult = result
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.WRITE_CALENDAR), REQ_CALENDAR_WRITE
+            requestPermission(
+                Manifest.permission.WRITE_CALENDAR,
+                REQ_CALENDAR_WRITE,
+                "calendar_write_permission",
+                "Calendar access is off. Allow Calendar in Settings to export deadlines.",
+                { addCalendarEvent(call, result) },
+                result,
             )
             return
         }
-        val title = call.argument<String>("title") ?: run { result.success(false); return }
-        val start = call.argument<Long>("start") ?: run { result.success(false); return }
+        val title = call.argument<String>("title") ?: run { fail(result, "calendar_write_failed", "The deadline is missing its title."); return }
+        val start = call.argument<Long>("start") ?: run { fail(result, "calendar_write_failed", "The deadline is missing its date."); return }
         val minutes = call.argument<Int>("durationMinutes") ?: 60
-        result.success(try {
+        val ok = try {
             val values = ContentValues().apply {
                 put(CalendarContract.Events.DTSTART, start)
                 put(CalendarContract.Events.DTEND, start + minutes * 60_000L)
@@ -648,10 +754,16 @@ class MainActivity : FlutterFragmentActivity() {
                 put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
             }
             contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null
+        } catch (e: SecurityException) {
+            Log.w("DeadlineCalendar", "Calendar permission was revoked", e)
+            fail(result, "calendar_write_permission", "Calendar access was revoked. Allow it in Settings to export deadlines.")
+            return
         } catch (e: Exception) {
             Log.w("DeadlineCalendar", "Could not write calendar", e)
-            false
-        })
+            fail(result, "calendar_write_failed", "Could not add the deadline to the device calendar.")
+            return
+        }
+        result.success(ok)
     }
 
     private fun defaultCalendarId(): Long {

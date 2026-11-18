@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/notes_store.dart';
 import '../data/task_store.dart';
 import '../services/app_lock_service.dart';
+import '../services/location_alerts.dart';
 import '../services/note_import.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
@@ -59,6 +60,7 @@ class _HomeShellState extends State<HomeShell> {
     SharedNotesInbox.instance.start();
     _drainSharedNotes();
     widget.appLock.addListener(_onLockChanged);
+    LocationAlerts.lastError.addListener(_onBridgeError);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeOpenQuickNote());
   }
 
@@ -66,10 +68,22 @@ class _HomeShellState extends State<HomeShell> {
   void dispose() {
     SharedNotesInbox.instance.removeListener(_onInboxChanged);
     widget.appLock.removeListener(_onLockChanged);
+    LocationAlerts.lastError.removeListener(_onBridgeError);
     super.dispose();
   }
 
   void _onLockChanged() => _maybeOpenQuickNote();
+
+  /// Location alerts are changed by the task store rather than a page, so
+  /// their permission errors surface here instead of being swallowed.
+  void _onBridgeError() {
+    final message = LocationAlerts.lastError.value;
+    if (message == null || !mounted) return;
+    LocationAlerts.lastError.value = null;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   /// The shortcut (or a draft interrupted by the camera) opens a note form,
   /// but only after the user has passed the app-lock gate. Pending shares are
@@ -108,6 +122,7 @@ class _HomeShellState extends State<HomeShell> {
     _draining = true;
     var imported = 0;
     var duplicates = 0;
+    var blank = 0;
     try {
       while (true) {
         final texts = SharedNotesInbox.instance.take();
@@ -115,17 +130,20 @@ class _HomeShellState extends State<HomeShell> {
         final outcome = await NoteImport.importAll(widget.notesStore, texts);
         imported += outcome.imported;
         duplicates += outcome.duplicates;
+        blank += outcome.blank;
       }
     } finally {
       _draining = false;
     }
 
-    if (!mounted || (imported == 0 && duplicates == 0)) return;
+    if (!mounted || (imported == 0 && duplicates == 0 && blank == 0)) return;
     if (imported > 0) setState(() => _index = 1);
 
-    final message = imported == 0
+    final message = imported == 0 && blank == 0
         ? 'Those notes are already in your app'
-        : 'Imported $imported note${imported == 1 ? '' : 's'} from Samsung Notes';
+        : 'Imported $imported note${imported == 1 ? '' : 's'} from Samsung Notes'
+            '${duplicates > 0 ? ' · $duplicates already there' : ''}'
+            '${blank > 0 ? ' · skipped $blank empty file${blank == 1 ? '' : 's'}' : ''}';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));

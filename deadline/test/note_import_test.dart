@@ -150,6 +150,13 @@ void main() {
       expect(parsed!.title, 'Books idea');
       expect(parsed.body, 'If I was God for a day');
     });
+
+    test('a title-only export keeps its title from the file name', () {
+      final parsed =
+          NoteImport.parse('\n \n', name: 'Books idea_260708_045209.txt');
+      expect(parsed!.title, 'Books idea');
+      expect(parsed.body, isNull);
+    });
   });
 
   group('repairing older imports', () {
@@ -195,6 +202,35 @@ void main() {
       expect(outcome.duplicates, 1);
     });
 
+    test('two different notes with the same title are both kept', () async {
+      final first = Note(
+        id: 'first',
+        title: 'Shopping list',
+        body: 'Sugar\nMilk',
+        updatedAt: DateTime.utc(2026, 11, 18, 7),
+      );
+      final second = Note(
+        id: 'second',
+        title: 'Shopping list',
+        body: 'Bread\nEggs',
+        updatedAt: DateTime.utc(2026, 11, 18, 8),
+      );
+      final reShare = Note(
+        id: 're-share',
+        title: 'Notes_240429_030544 (1)',
+        body: 'Shopping list\nSugar\nMilk',
+        updatedAt: DateTime.utc(2026, 11, 18, 9),
+      );
+      final store = _FakeNotesStore([first, second, reShare]);
+
+      await NoteImport.repairLegacyTitles(store);
+
+      // Only the re-share matches "first" on title AND body, so it is the one
+      // purged. "second" shares the title but has a different body and stays.
+      expect(store.purged.map((n) => n.id), ['re-share']);
+      expect(store.notes.map((n) => n.id), containsAll(['first', 'second']));
+    });
+
     test('purges the newer copy left by a repeated Samsung export', () async {
       final original = Note(
         id: 'old',
@@ -235,6 +271,27 @@ void main() {
       expect(outcome.duplicates, 1);
       expect(store.added.map((n) => n.title), ['Fresh note', 'Another']);
       expect(store.added.first.body, 'with some detail');
+    });
+
+    test('empty text with no file name is counted as skipped', () async {
+      final store = _FakeNotesStore([]);
+      final outcome = await NoteImport.importAll(store, const [
+        SharedNote('   \n\n'),
+        SharedNote('Real note\nbody'),
+      ]);
+      expect(outcome.imported, 1);
+      expect(outcome.blank, 1);
+      expect(store.added.map((n) => n.title), ['Real note']);
+    });
+
+    test('a title-only export is imported instead of skipped', () async {
+      final store = _FakeNotesStore([]);
+      final outcome = await NoteImport.importAll(store, const [
+        SharedNote('\n', name: 'Books idea_260708_045209.txt'),
+      ]);
+      expect(outcome.imported, 1);
+      expect(outcome.blank, 0);
+      expect(store.added.single.title, 'Books idea');
     });
 
     test('duplicates inside one share are only added once', () async {

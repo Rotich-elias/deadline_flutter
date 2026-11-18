@@ -313,31 +313,42 @@ class _NoteFormState extends State<_NoteForm> {
   }
 
   Future<void> _toggleRecording() async {
-    if (_recording) {
-      final path = await PlatformBridge.stopAudioRecording();
-      if (mounted) setState(() => _recording = false);
-      if (path == null) {
-        _say('The recording could not be saved.');
+    try {
+      if (_recording) {
+        final path = await PlatformBridge.stopAudioRecording();
+        if (mounted) setState(() => _recording = false);
+        if (path == null) {
+          _say('The recording could not be saved.');
+          return;
+        }
+        await _importCaptured(path);
         return;
       }
-      await _importCaptured(path);
-      return;
+      final path = await PlatformBridge.startAudioRecording();
+      if (path == null) {
+        _say('Microphone permission is needed for voice notes.');
+        return;
+      }
+      if (mounted) setState(() => _recording = true);
+    } on BridgeException catch (e) {
+      // A denied or revoked microphone permission arrives here as an error,
+      // never as a file path that could be mistaken for a recording.
+      if (mounted) setState(() => _recording = false);
+      _say(e.message);
     }
-    final path = await PlatformBridge.startAudioRecording();
-    if (path == null) {
-      _say('Microphone permission is needed for voice notes.');
-      return;
-    }
-    if (mounted) setState(() => _recording = true);
   }
 
   Future<void> _transcribe() async {
-    final text = await PlatformBridge.transcribe();
-    if (text == null || text.trim().isEmpty) {
-      _say('Nothing was recognised. Try again in a quieter place.');
-      return;
+    try {
+      final text = await PlatformBridge.transcribe();
+      if (text == null || text.trim().isEmpty) {
+        _say('Nothing was recognised. Try again in a quieter place.');
+        return;
+      }
+      _appendText(text.trim());
+    } on BridgeException catch (e) {
+      _say(e.message);
     }
-    _appendText(text.trim());
   }
 
   Future<void> _clipWeb() async {

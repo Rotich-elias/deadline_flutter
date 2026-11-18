@@ -10,29 +10,47 @@ class CameraCaptureException implements Exception {
   String toString() => message;
 }
 
+/// A permission/bridge error reported explicitly by Android.
+///
+/// These are thrown rather than returned as null/false/empty so a revoked
+/// permission cannot masquerade as "no result" in the UI.
+class BridgeException implements Exception {
+  const BridgeException(this.code, this.message);
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Thin Dart wrapper over the small Android bridge in MainActivity.kt.
 ///
-/// Every method is optional: on unsupported platforms or when a permission is
-/// denied the calls return null/false rather than throwing, so the UI can
-/// simply hide or explain the feature.
+/// Calls return null/false/empty when the platform does not implement the
+/// channel (tests, unsupported platforms). A permission refusal or a native
+/// failure is reported as a [BridgeException] so the UI can show the reason.
 class PlatformBridge {
   static const MethodChannel _channel = MethodChannel('deadline/platform');
 
   static Future<String?> _string(String method, [Object? arg]) async {
     try {
       return await _channel.invokeMethod<String>(method, arg);
-    } on PlatformException catch (e) {
-      return e.message;
-    } catch (_) {
+    } on MissingPluginException {
       return null;
+    } on PlatformException catch (e) {
+      throw BridgeException(
+          e.code, e.message ?? 'The device could not complete this action.');
     }
   }
 
   static Future<bool> _bool(String method, [Object? arg]) async {
     try {
       return await _channel.invokeMethod<bool>(method, arg) ?? false;
-    } catch (_) {
+    } on MissingPluginException {
       return false;
+    } on PlatformException catch (e) {
+      throw BridgeException(
+          e.code, e.message ?? 'The device could not complete this action.');
     }
   }
 
@@ -42,6 +60,8 @@ class PlatformBridge {
   static Future<String?> capturePhoto() async {
     try {
       return await _channel.invokeMethod<String>('capturePhoto');
+    } on MissingPluginException {
+      return null;
     } on PlatformException catch (e) {
       throw CameraCaptureException(e.message ?? 'The camera could not open.');
     }
@@ -69,8 +89,11 @@ class PlatformBridge {
       final lon = (raw['longitude'] as num?)?.toDouble();
       if (lat == null || lon == null) return null;
       return {'latitude': lat, 'longitude': lon};
-    } catch (_) {
+    } on MissingPluginException {
       return null;
+    } on PlatformException catch (e) {
+      throw BridgeException(
+          e.code, e.message ?? 'Your location could not be read.');
     }
   }
 
@@ -109,8 +132,11 @@ class PlatformBridge {
         for (final item in raw ?? const [])
           Map<String, dynamic>.from(item.map((k, v) => MapEntry('$k', v))),
       ];
-    } catch (_) {
+    } on MissingPluginException {
       return const [];
+    } on PlatformException catch (e) {
+      throw BridgeException(
+          e.code, e.message ?? 'The device calendar could not be read.');
     }
   }
 

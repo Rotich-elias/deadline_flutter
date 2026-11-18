@@ -77,13 +77,18 @@ class _CalendarPageState extends State<CalendarPage> {
         .where((t) => !t.deleted && !t.done)
         .toList(growable: false);
     var sent = 0;
-    for (final task in tasks) {
-      if (await PlatformBridge.addCalendarEvent(
-        title: task.title,
-        start: task.dueLocal,
-      )) {
-        sent++;
+    try {
+      for (final task in tasks) {
+        if (await PlatformBridge.addCalendarEvent(
+          title: task.title,
+          start: task.dueLocal,
+        )) {
+          sent++;
+        }
       }
+    } on BridgeException catch (e) {
+      _say(e.message);
+      return;
     }
     _say(sent == 0
         ? 'No deadlines were added. Check calendar permission.'
@@ -98,7 +103,13 @@ class _CalendarPageState extends State<CalendarPage> {
     final navigator = Navigator.of(context);
     final from = DateTime(_month.year, _month.month, 1);
     final to = DateTime(_month.year, _month.month + 1, 0, 23, 59);
-    final events = await PlatformBridge.calendarEvents(from: from, to: to);
+    final List<Map<String, dynamic>> events;
+    try {
+      events = await PlatformBridge.calendarEvents(from: from, to: to);
+    } on BridgeException catch (e) {
+      _say(e.message);
+      return;
+    }
     if (events.isEmpty) {
       _say('No events found in the device calendar for this month.');
       return;
