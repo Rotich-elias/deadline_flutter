@@ -103,6 +103,19 @@ class PlatformBridge {
         'durationMinutes': durationMinutes,
       });
 
+  /// Installed version from Android's package manager, e.g. `1.0.20+21`.
+  static Future<String?> appVersion() async {
+    try {
+      return await _channel.invokeMethod<String>('appVersion');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Opens an http(s) URL in the phone's browser. Returns false when no
+  /// browser is installed so the caller can show the URL as plain text.
+  static Future<bool> openUrl(String url) => _bool('openUrl', url);
+
   /// True when this launch came from the "Quick note" home-screen shortcut.
   static Future<bool> takeQuickNote() => _bool('takeQuickNote');
 }

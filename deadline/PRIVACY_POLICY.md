@@ -72,4 +72,5 @@ published at the same URL. The effective date above shows when it last changed.
 
 ## Contact
 
-Use the developer email address shown on the app's Google Play listing.
+Use the developer email address shown on the app's Google Play listing, or visit
+teto.co.ke.

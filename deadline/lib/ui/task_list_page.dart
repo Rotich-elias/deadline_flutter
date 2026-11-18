@@ -8,6 +8,7 @@ import '../sync/collaboration_api.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
 import '../utils/urgency.dart';
+import 'about_page.dart';
 import 'activity_log_page.dart';
 import 'app_lock_settings.dart';
 import 'archive_page.dart';
@@ -356,6 +357,10 @@ class _Header extends StatelessWidget {
                 showAppearanceSettings(context, appTheme);
               } else if (v == 'applock') {
                 showAppLockSettings(context, appLock, notesStore);
+              } else if (v == 'about') {
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const AboutPage(),
+                ));
               } else if (v == 'privacy') {
                 Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const PrivacyPolicyPage(),
@@ -408,6 +413,7 @@ class _Header extends StatelessWidget {
                   ],
                 ),
               ),
+              const PopupMenuItem(value: 'about', child: Text('About')),
               const PopupMenuItem(
                   value: 'privacy', child: Text('Privacy policy')),
             ],

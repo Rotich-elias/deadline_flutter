@@ -135,7 +135,7 @@ class PrivacyPolicyPage extends StatelessWidget {
             const SizedBox(height: 28),
             Text(
               'Contact: use the developer email address shown on the app\'s '
-              'Google Play listing.',
+              'Google Play listing, or visit teto.co.ke.',
               style: TextStyle(fontSize: 13, color: Ink0.muted, height: 1.5),
             ),
           ],

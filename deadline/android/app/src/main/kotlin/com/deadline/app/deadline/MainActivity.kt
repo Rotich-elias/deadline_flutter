@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ContentValues
 import android.content.Context
@@ -123,6 +124,11 @@ class MainActivity : FlutterFragmentActivity() {
                     "clearProximityAlerts" -> clearProximityAlerts(call, result)
                     "calendarEvents" -> calendarEvents(call, result)
                     "addCalendarEvent" -> addCalendarEvent(call, result)
+                    "appVersion" -> result.success(appVersion())
+                    "openUrl" -> {
+                        val url = call.arguments as? String
+                        result.success(url != null && openUrl(url))
+                    }
                     "takeQuickNote" -> {
                         result.success(quickNoteLaunch)
                         quickNoteLaunch = false
@@ -218,6 +224,32 @@ class MainActivity : FlutterFragmentActivity() {
         return try {
             startActivity(intent)
             true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Version shown on the About page, straight from the package manager. */
+    private fun appVersion(): String? = try {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0).versionName
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Opens only http(s) links in the browser; returns false if none exists. */
+    private fun openUrl(raw: String): Boolean {
+        val uri = try {
+            Uri.parse(if ("://" in raw) raw else "https://$raw")
+        } catch (e: Exception) {
+            return false
+        }
+        if (uri.scheme != "http" && uri.scheme != "https") return false
+        return try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+            true
+        } catch (e: ActivityNotFoundException) {
+            false
         } catch (e: Exception) {
             false
         }

@@ -149,5 +149,14 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:mimeType="application/vnd.oasis.opendocument.text"/>
         </intent>
+        <!-- Company website link in About and the footer credit. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
     </queries>
 </manifest>

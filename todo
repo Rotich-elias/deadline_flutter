@@ -354,3 +354,7 @@ Already shipped beyond this list
 • Daily digest notification
 • Light/dark/system appearance
 • Optional sync settings and privacy policy
+• About page with app version and the company website (teto.co.ke); the
+  "Powered by teto technologies" footer is tappable everywhere, including the
+  loading screen, and opens teto.co.ke in the browser. Added 18 Nov 2026 in
+  1.0.21+22 via the existing platform channel (no new dependency).

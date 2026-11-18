@@ -6,6 +6,7 @@ import '../models/note.dart';
 import '../services/app_lock_service.dart';
 import '../sync/sync_service.dart';
 import '../theme.dart';
+import 'about_page.dart';
 import 'activity_log_page.dart';
 import 'app_lock_settings.dart';
 import 'archive_page.dart';
@@ -297,6 +298,10 @@ class _Header extends StatelessWidget {
                   onPasteNote();
                 case 'applock':
                   showAppLockSettings(context, appLock, store);
+                case 'about':
+                  Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const AboutPage(),
+                  ));
                 case 'activity':
                   final navigator = Navigator.of(context);
                   final log = await store.activityLog;
@@ -317,6 +322,7 @@ class _Header extends StatelessWidget {
               const PopupMenuItem(value: 'paste', child: Text('Paste a note')),
               const PopupMenuItem(
                   value: 'activity', child: Text('Activity log')),
+              const PopupMenuItem(value: 'about', child: Text('About')),
               PopupMenuItem(
                 value: 'applock',
                 child: Row(
