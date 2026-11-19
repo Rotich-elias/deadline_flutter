@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:deadline/models/app_update.dart';
+import 'package:deadline/services/update_service.dart';
 import 'package:deadline/theme.dart';
 import 'package:deadline/ui/about_page.dart';
 import 'package:deadline/ui/privacy_page.dart';
@@ -19,6 +21,7 @@ void main() {
 
   setUp(() {
     calls.clear();
+    UpdateState.instance.available.value = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('deadline/platform'),
@@ -71,6 +74,22 @@ void main() {
     final openCalls = calls.where((c) => c.method == 'openUrl').toList();
     expect(openCalls, hasLength(1));
     expect(openCalls.single.arguments, Company.websiteUrl);
+  });
+
+  testWidgets('shows an N badge while an update is available', (tester) async {
+    UpdateState.instance.available.value = const AppUpdate(
+      latestVersion: '1.0.27',
+      url: Company.apkUrl,
+    );
+    await tester.pumpWidget(_wrap(const AboutPage()));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('about-update-badge')), findsOneWidget);
+    expect(find.text('N'), findsOneWidget);
+
+    UpdateState.instance.available.value = null;
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('about-update-badge')), findsNothing);
   });
 
   testWidgets('tapping the privacy row opens the privacy policy',

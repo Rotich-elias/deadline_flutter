@@ -30,13 +30,26 @@ class _AboutPageState extends State<AboutPage> {
 
   UpdateService get _updates => widget.updateService ?? const UpdateService();
 
+  bool get _hasUpdate => UpdateState.instance.available.value != null;
+
   @override
   void initState() {
     super.initState();
+    UpdateState.instance.available.addListener(_onUpdateChanged);
     PlatformBridge.appVersion().then((version) {
       if (!mounted || version == null || version.isEmpty) return;
       setState(() => _version = version);
     });
+  }
+
+  void _onUpdateChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    UpdateState.instance.available.removeListener(_onUpdateChanged);
+    super.dispose();
   }
 
   Future<void> _checkForUpdates() async {
@@ -56,6 +69,7 @@ class _AboutPageState extends State<AboutPage> {
 
     final update = await _updates.check(current);
     if (!mounted) return;
+    UpdateState.instance.available.value = update;
     setState(() {
       _checking = false;
       _available = update;
@@ -195,7 +209,26 @@ class _AboutPageState extends State<AboutPage> {
                               : 'Version ${_available!.latestVersion} available',
                           style: TextStyle(fontSize: 12, color: Ink0.muted),
                         ),
-                  trailing: Icon(Icons.chevron_right, size: 16, color: Ink0.muted),
+                  trailing: _hasUpdate
+                      ? Container(
+                          key: const Key('about-update-badge'),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text(
+                            'N',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        )
+                      : Icon(Icons.chevron_right,
+                          size: 16, color: Ink0.muted),
                   onTap: _checking ? null : _checkForUpdates,
                 ),
               ],

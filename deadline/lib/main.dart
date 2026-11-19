@@ -257,7 +257,9 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
     final current = await PlatformBridge.appVersion();
     if (current == null || current.isEmpty || !mounted) return;
     final update = await const UpdateService().check(current);
-    if (update == null || !mounted) return;
+    if (!mounted) return;
+    UpdateState.instance.available.value = update;
+    if (update == null) return;
 
     // Safe to post even when locked; only the dialog must wait for unlock.
     await Notifications.instance.showUpdateNotification(update);

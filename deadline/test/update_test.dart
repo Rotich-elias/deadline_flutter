@@ -36,6 +36,8 @@ class _FakeServer {
 }
 
 void main() {
+  tearDown(() => UpdateState.instance.available.value = null);
+
   group('AppUpdate', () {
     test('compares dotted versions and ignores build suffixes', () {
       expect(AppUpdate.compareVersions('1.0.24', '1.0.25'), -1);

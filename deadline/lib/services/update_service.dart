@@ -45,6 +45,15 @@ class SharedPreferencesFingerprintStore implements UpdateFingerprintStore {
   }
 }
 
+/// Last update discovered by any check, shared with the About page so it can
+/// show an "N" badge without running its own network request.
+class UpdateState {
+  UpdateState._();
+  static final instance = UpdateState._();
+
+  final ValueNotifier<AppUpdate?> available = ValueNotifier<AppUpdate?>(null);
+}
+
 /// Checks for a new APK without any server-side API.
 ///
 /// A HEAD request follows the download redirect and reads the final URL plus
