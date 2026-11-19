@@ -47,10 +47,10 @@ class _NotesListPageState extends State<NotesListPage> {
   final _searchFocus = FocusNode();
   bool _searching = false;
 
-  /// Notes look like notebook pages by default; the header can switch back to
-  /// the compact list. The choice survives restarts.
-  static const _pagesViewKey = 'notes.pages.view';
-  bool _pagesView = true;
+  /// Notes show as notebook-style cards by default; the header can switch back
+  /// to the compact list. The choice survives restarts.
+  static const _gridViewKey = 'notes.pages.view';
+  bool _gridView = true;
 
   @override
   void initState() {
@@ -62,18 +62,18 @@ class _NotesListPageState extends State<NotesListPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
-      setState(() => _pagesView = prefs.getBool(_pagesViewKey) ?? true);
+      setState(() => _gridView = prefs.getBool(_gridViewKey) ?? true);
     } catch (_) {
-      // Preferences are optional; keep the default page view.
+      // Preferences are optional; keep the default card grid.
     }
   }
 
   void _toggleView() {
-    setState(() => _pagesView = !_pagesView);
+    setState(() => _gridView = !_gridView);
     unawaited(() async {
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(_pagesViewKey, _pagesView);
+        await prefs.setBool(_gridViewKey, _gridView);
       } catch (_) {
         // Ignore storage failures; the view still works for this session.
       }
@@ -185,7 +185,7 @@ class _NotesListPageState extends State<NotesListPage> {
                   sync: widget.sync,
                   appLock: widget.appLock,
                   searching: _searching,
-                  pagesView: _pagesView,
+                  gridView: _gridView,
                   onToggleSearch: _toggleSearch,
                   onToggleView: _toggleView,
                   onOpenArchive: () => _openArchive(context),
@@ -223,8 +223,8 @@ class _NotesListPageState extends State<NotesListPage> {
                       ? _Empty(query: widget.store.query)
                       : RefreshIndicator(
                           onRefresh: widget.sync.syncNow,
-                          child: _pagesView
-                              ? _pagesGrid(context, notes)
+                          child: _gridView
+                              ? _grid(context, notes)
                               : _list(context, notes),
                         ),
                 ),
@@ -269,14 +269,13 @@ class _NotesListPageState extends State<NotesListPage> {
               notes[i],
               NoteCard(
                 note: notes[i],
-                pageNumber: i + 1,
                 onEdit: () => _open(context, notes[i]),
               ),
             ),
         ],
       );
 
-  Widget _pagesGrid(BuildContext context, List<Note> notes) => GridView.builder(
+  Widget _grid(BuildContext context, List<Note> notes) => GridView.builder(
         padding: const EdgeInsets.fromLTRB(10, 12, 10, 96),
         physics: const AlwaysScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -291,7 +290,6 @@ class _NotesListPageState extends State<NotesListPage> {
           notes[i],
           NotePageCard(
             note: notes[i],
-            pageNumber: i + 1,
             onEdit: () => _open(context, notes[i]),
           ),
         ),
@@ -304,7 +302,7 @@ class _Header extends StatelessWidget {
     required this.sync,
     required this.appLock,
     required this.searching,
-    required this.pagesView,
+    required this.gridView,
     required this.onToggleSearch,
     required this.onToggleView,
     required this.onOpenArchive,
@@ -316,7 +314,7 @@ class _Header extends StatelessWidget {
   final SyncService sync;
   final AppLockService appLock;
   final bool searching;
-  final bool pagesView;
+  final bool gridView;
   final VoidCallback onToggleSearch;
   final VoidCallback onToggleView;
   final VoidCallback onOpenArchive;
@@ -356,10 +354,10 @@ class _Header extends StatelessWidget {
                 Icon(searching ? Icons.close : Icons.search, color: Ink0.muted),
           ),
           IconButton(
-            tooltip: pagesView ? 'List view' : 'Pages view',
+            tooltip: gridView ? 'List view' : 'Grid view',
             onPressed: onToggleView,
             icon: Icon(
-              pagesView ? Icons.view_list : Icons.grid_view,
+              gridView ? Icons.view_list : Icons.grid_view,
               color: Ink0.muted,
             ),
           ),

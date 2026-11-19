@@ -16,7 +16,7 @@ class LocalDb {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'deadline.db'),
-      version: 10,
+      version: 11,
       onCreate: (d, _) async {
         await d.execute('''
           CREATE TABLE tasks (
@@ -26,6 +26,7 @@ class LocalDb {
             tag         TEXT,
             due_at      INTEGER NOT NULL,
             done        INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
             updated_at  INTEGER NOT NULL,
             deleted     INTEGER NOT NULL DEFAULT 0,
             dirty       INTEGER NOT NULL DEFAULT 1,
@@ -129,6 +130,13 @@ class LocalDb {
               "ALTER TABLE notes ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'");
           await d.execute('ALTER TABLE notes ADD COLUMN notebook TEXT');
           await d.execute('CREATE INDEX idx_notes_notebook ON notes(notebook)');
+        }
+        if (oldVersion < 11) {
+          // Completion time powers the "latest completed first" ordering.
+          // Existing done tasks fall back to their update time.
+          await d.execute('ALTER TABLE tasks ADD COLUMN completed_at INTEGER');
+          await d.execute(
+              'UPDATE tasks SET completed_at = updated_at WHERE done = 1');
         }
       },
     );
@@ -304,12 +312,13 @@ class LocalDb {
 
   // --- Notes ----------------------------------------------------------
 
-  /// Live notes, most recently updated first.
+  /// Live notes, most recently updated first. Pins are still shown on each
+  /// card but no longer reorder the list: "last one first" means newest first.
   Future<List<Note>> allNotes() async {
     final rows = await db.query(
       'notes',
       where: 'deleted = 0',
-      orderBy: 'pinned DESC, updated_at DESC',
+      orderBy: 'updated_at DESC',
     );
     return rows.map(Note.fromRow).toList();
   }

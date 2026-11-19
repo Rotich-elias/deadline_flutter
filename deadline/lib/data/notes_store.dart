@@ -112,7 +112,10 @@ class NotesStore extends ChangeNotifier {
                 ...n.attachments.map((a) => a.fileName),
               ]);
     }
-    return list;
+    // Newest first, independent of pin state or the order the DB returned.
+    final ordered = List<Note>.from(list)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return ordered;
   }
 
   /// Called after any local mutation so the sync layer can push promptly.

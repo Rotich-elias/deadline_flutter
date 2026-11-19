@@ -120,7 +120,7 @@ class TaskStore extends ChangeNotifier {
   }
 
   List<Task> get visible {
-    var list = showCompleted ? _tasks : _tasks.where((t) => !t.done).toList();
+    var list = (showCompleted ? _tasks : _tasks.where((t) => !t.done)).toList();
     if (tagFilter != null) {
       list = list.where((t) => t.tag == tagFilter).toList();
     }
@@ -148,7 +148,18 @@ class TaskStore extends ChangeNotifier {
     // so urgency stays the primary grouping and priority is the tie-breaker
     // inside each bucket — a high-priority task due next week should not
     // jump ahead of something overdue today.
+    //
+    // When completed tasks are shown they lead the list, newest completion
+    // first, so the last thing finished is always on top.
     list.sort((a, b) {
+      if (showCompleted) {
+        if (a.done != b.done) return a.done ? -1 : 1;
+        if (a.done && b.done) {
+          final doneA = a.completedAt ?? a.updatedAt;
+          final doneB = b.completedAt ?? b.updatedAt;
+          return doneB.compareTo(doneA);
+        }
+      }
       if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
       if (a.done != b.done) return a.done ? 1 : -1;
       final bucketA = urgencyOf(a).index;

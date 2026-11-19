@@ -10,14 +10,10 @@ class NoteCard extends StatelessWidget {
     super.key,
     required this.note,
     required this.onEdit,
-    this.pageNumber,
   });
 
   final Note note;
   final VoidCallback onEdit;
-
-  /// Shown as "PAGE n" in the corner when the list supplies an index.
-  final int? pageNumber;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +25,6 @@ class NoteCard extends StatelessWidget {
           onTap: onEdit,
           borderRadius: BorderRadius.circular(11),
           child: PaperPage(
-            pageNumber: pageNumber,
             pinned: note.pinned,
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
             child: Column(

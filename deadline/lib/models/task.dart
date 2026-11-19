@@ -148,6 +148,7 @@ class Task {
     this.notes,
     this.tag,
     this.done = false,
+    this.completedAt,
     this.deleted = false,
     this.dirty = true,
     this.repeat = Repeat.none,
@@ -209,6 +210,12 @@ class Task {
   String? tag;
   DateTime dueAt;
   bool done;
+
+  /// When the task was last marked done. Device-local like [archivedAt]: it is
+  /// stored so completed tasks can be shown newest-first, and falls back to
+  /// [updatedAt] for tasks completed by an older build or another device.
+  DateTime? completedAt;
+
   DateTime updatedAt;
   Repeat repeat;
 
@@ -309,6 +316,8 @@ class Task {
     String? tag,
     DateTime? dueAtLocal,
     bool? done,
+    DateTime? completedAt,
+    bool clearCompletedAt = false,
     bool? deleted,
     bool? dirty,
     Repeat? repeat,
@@ -330,13 +339,21 @@ class Task {
     bool clearLocationAlert = false,
     DateTime? updatedAt,
   }) {
+    final now = DateTime.now().toUtc();
+    final nextDone = done ?? this.done;
+    final DateTime? nextCompletedAt = done == null
+        ? (clearCompletedAt ? null : this.completedAt)
+        : nextDone
+            ? (this.done ? this.completedAt ?? now : now)
+            : null;
     return Task(
       id: id,
       title: title ?? this.title,
       notes: notes ?? this.notes,
       tag: clearTag ? null : (tag ?? this.tag),
       dueAt: dueAtLocal?.toUtc() ?? dueAt,
-      done: done ?? this.done,
+      done: nextDone,
+      completedAt: nextCompletedAt,
       deleted: deleted ?? this.deleted,
       dirty: dirty ?? true,
       repeat: repeat ?? this.repeat,
@@ -352,7 +369,7 @@ class Task {
       category: clearCategory ? null : (category ?? this.category),
       locationAlert:
           clearLocationAlert ? null : (locationAlert ?? this.locationAlert),
-      updatedAt: updatedAt ?? DateTime.now().toUtc(),
+      updatedAt: updatedAt ?? now,
     );
   }
 
@@ -510,6 +527,7 @@ class Task {
         'tag': tag,
         'due_at': dueAt.millisecondsSinceEpoch,
         'done': done ? 1 : 0,
+        'completed_at': completedAt?.millisecondsSinceEpoch,
         'updated_at': updatedAt.millisecondsSinceEpoch,
         'deleted': deleted ? 1 : 0,
         'dirty': dirty ? 1 : 0,
@@ -536,6 +554,7 @@ class Task {
         dueAt: DateTime.fromMillisecondsSinceEpoch(r['due_at'] as int,
             isUtc: true),
         done: (r['done'] as int) == 1,
+        completedAt: _parseDate(r['completed_at']),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(r['updated_at'] as int,
             isUtc: true),
         deleted: (r['deleted'] as int) == 1,

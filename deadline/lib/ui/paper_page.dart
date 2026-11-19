@@ -4,15 +4,15 @@ import '../theme.dart';
 
 const _gold = Color(0xFFE4C441);
 
-/// A note drawn as a sheet from a notebook: soft shadow, bound left edge, faint
-/// ruled lines and an optional page number. Used by both the list card and the
-/// full-page reader so notes look like Samsung Notes pages.
+/// A note drawn as a sheet from a notebook: soft shadow, bound left edge and
+/// faint ruled lines. Used by both the list card and the full-page reader so
+/// notes look like Samsung Notes sheets. Notes are identified by their title,
+/// never by a generated "page" number.
 class PaperPage extends StatelessWidget {
   const PaperPage({
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
-    this.pageNumber,
     this.pinned = false,
     this.showLines = true,
     this.minHeight,
@@ -20,7 +20,6 @@ class PaperPage extends StatelessWidget {
 
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final int? pageNumber;
   final bool pinned;
   final bool showLines;
   final double? minHeight;
@@ -66,20 +65,6 @@ class PaperPage extends StatelessWidget {
             padding: padding,
             child: child,
           ),
-          if (pageNumber != null)
-            Positioned(
-              right: 12,
-              top: 8,
-              child: Text(
-                'PAGE $pageNumber',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.7,
-                  color: Ink0.muted.withValues(alpha: 0.75),
-                ),
-              ),
-            ),
         ],
       ),
     );

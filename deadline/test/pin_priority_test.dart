@@ -7,6 +7,7 @@ import 'package:deadline/models/note.dart';
 import 'package:deadline/models/task.dart';
 import 'package:deadline/theme.dart';
 import 'package:deadline/ui/note_card.dart';
+import 'package:deadline/ui/note_page_card.dart';
 import 'package:deadline/ui/task_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -247,6 +248,47 @@ void main() {
     });
   });
 
+  group('note ordering', () {
+    test('newest note first even when an older note is pinned', () async {
+      final older = Note(
+        id: 'older',
+        title: 'Older',
+        pinned: true,
+        updatedAt: DateTime.utc(2026, 1, 1),
+      );
+      final newest = Note(
+        id: 'newest',
+        title: 'Newest',
+        updatedAt: DateTime.utc(2026, 1, 3),
+      );
+      final middle = Note(
+        id: 'middle',
+        title: 'Middle',
+        updatedAt: DateTime.utc(2026, 1, 2),
+      );
+      final store = NotesStore(_FakeNotesDb([older, middle, newest]));
+      await store.load();
+
+      expect(store.visible.map((n) => n.id), ['newest', 'middle', 'older']);
+    });
+
+    testWidgets('note cards use their title, never a generated page label',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: buildTheme(Brightness.dark),
+        home: Scaffold(
+          body: NotePageCard(
+            note: Note(id: 'n', title: 'My own title'),
+            onEdit: () {},
+          ),
+        ),
+      ));
+
+      expect(find.text('My own title'), findsOneWidget);
+      expect(find.textContaining('PAGE'), findsNothing);
+    });
+  });
+
   group('task ordering', () {
     test('pinned first, then urgency, priority inside a bucket, done last',
         () async {
@@ -282,6 +324,34 @@ void main() {
         'today-low',
         'later-low',
       ]);
+    });
+
+    test('completed tasks lead with the latest completion on top', () async {
+      final now = DateTime.now().toUtc();
+      Task completed(String id, DateTime finished) => Task(
+            id: id,
+            title: id,
+            dueAt: now.subtract(const Duration(days: 1)),
+            done: true,
+            completedAt: finished,
+          );
+      final db = _FakeTasksDb([
+        completed('older', now.subtract(const Duration(hours: 3))),
+        _task('open', dueAt: now.add(const Duration(days: 1))),
+        completed('newest', now.subtract(const Duration(minutes: 5))),
+      ]);
+      final store = TaskStore(db, startTicker: false);
+      await store.load();
+      store.showCompleted = true;
+
+      expect(store.visible.map((t) => t.id), ['newest', 'older', 'open']);
+    });
+
+    test('completing stamps a time and reopening clears it', () {
+      final task = _task('a', dueAt: DateTime.now().toUtc());
+      final done = task.copyWith(done: true);
+      expect(done.completedAt, isNotNull);
+      expect(done.copyWith(done: false).completedAt, isNull);
     });
 
     test('setPinned writes through the normal dirty save path', () async {

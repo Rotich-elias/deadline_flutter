@@ -5,18 +5,17 @@ import '../models/note.dart';
 import '../theme.dart';
 import 'paper_page.dart';
 
-/// A notebook-style thumbnail used by the Notes "Pages" grid.
+/// A notebook-style thumbnail used by the Notes grid. The note's own title is
+/// the only label — it is never numbered as a "page".
 class NotePageCard extends StatelessWidget {
   const NotePageCard({
     super.key,
     required this.note,
     required this.onEdit,
-    required this.pageNumber,
   });
 
   final Note note;
   final VoidCallback onEdit;
-  final int pageNumber;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +25,6 @@ class NotePageCard extends StatelessWidget {
         onTap: onEdit,
         borderRadius: BorderRadius.circular(11),
         child: PaperPage(
-          pageNumber: pageNumber,
           pinned: note.pinned,
           minHeight: 236,
           padding: const EdgeInsets.fromLTRB(16, 20, 14, 12),
