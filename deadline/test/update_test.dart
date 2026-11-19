@@ -48,6 +48,15 @@ void main() {
       const update = AppUpdate(url: _url);
       expect(update.displayVersion, 'Latest available');
       expect(update.isNewerThan('1.0.24'), isTrue);
+      expect(update.updateKey, _url);
+    });
+
+    test('update identity defaults to the published version when present', () {
+      const update = AppUpdate(latestVersion: '1.0.25', url: _url);
+      expect(update.updateKey, '1.0.25');
+
+      const fingerprinted = AppUpdate(url: _url, updateKey: '"etag"');
+      expect(fingerprinted.updateKey, '"etag"');
     });
 
     test('uses a version parsed from the download filename when present', () {
@@ -133,6 +142,27 @@ void main() {
           .check('1.0.24');
 
       expect(update?.latestVersion, '1.0.25');
+    });
+
+    test('uses the version or APK fingerprint as the notification identity',
+        () async {
+      const versioned = 'https://example.test/deadline-1.0.25.apk';
+      final versionedUpdate = await UpdateService(
+        url: versioned,
+        client: _FakeServer(200, {'etag': '"v1"'}).client,
+        store: _MemoryStore(),
+      ).check('1.0.24');
+      expect(versionedUpdate?.updateKey, '1.0.25');
+
+      final store = _MemoryStore()..values[_url] = '"v1"';
+      final changed = _FakeServer(200, {
+        'ETag': '"v2"',
+        'Last-Modified': 'Wed, 18 Nov 2026 12:00:00 GMT',
+      });
+      final fingerprinted = await UpdateService(
+              url: _url, client: changed.client, store: store)
+          .check('1.0.24');
+      expect(fingerprinted?.updateKey, contains('"v2"'));
     });
 
     test('server failures and missing headers stay silent', () async {

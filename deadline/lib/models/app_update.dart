@@ -8,11 +8,16 @@ class AppUpdate {
     this.latestVersion,
     this.notes = '',
     required this.url,
-  });
+    String? updateKey,
+  }) : updateKey = updateKey ?? latestVersion ?? url;
 
   final String? latestVersion;
   final String notes;
   final String url;
+
+  /// Stable identity of this discovery, used to avoid repeat notifications.
+  /// Usually the version, or the APK fingerprint when no version is available.
+  final String updateKey;
 
   String get displayVersion => latestVersion ?? 'Latest available';
 

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/app_update.dart';
+import '../services/notifications.dart';
 import '../services/platform_bridge.dart';
 import '../services/update_service.dart';
 import '../theme.dart';
@@ -62,6 +65,9 @@ class _AboutPageState extends State<AboutPage> {
         const SnackBar(content: Text('You’re up to date.')),
       );
     } else {
+      // The user asked for this check, so show the prompt now and leave a
+      // notification too. The service dedups it if launch already posted one.
+      unawaited(Notifications.instance.showUpdateNotification(update));
       await offerUpdate(context, update: update, currentVersion: current);
     }
   }

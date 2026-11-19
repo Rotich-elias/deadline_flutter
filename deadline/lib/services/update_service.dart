@@ -102,14 +102,14 @@ class UpdateService {
           _versionFromUrl(finalUrl) ?? _versionFromUrl(url);
       if (parsedVersion != null) {
         return AppUpdate.compareVersions(currentVersion, parsedVersion) < 0
-            ? _available(parsedVersion)
+            ? _available(parsedVersion, fingerprint)
             : null;
       }
 
       // No version in the URL: fall back to "the file changed". The first
       // observation only records a baseline, so it never prompts spuriously.
       if (previous == null || previous == fingerprint) return null;
-      return _available(null);
+      return _available(null, fingerprint);
     } catch (e) {
       // Network, timeout or a broken response all mean "no update right now".
       debugPrint('Update check skipped: $e');
@@ -119,8 +119,9 @@ class UpdateService {
     }
   }
 
-  AppUpdate _available(String? version) => AppUpdate(
+  AppUpdate _available(String? version, String fingerprint) => AppUpdate(
         latestVersion: version,
+        updateKey: version ?? fingerprint,
         url: url,
         notes: 'A new version has been uploaded. Tap Update to download it.',
       );

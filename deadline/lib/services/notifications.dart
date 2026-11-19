@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -9,11 +11,21 @@ import 'package:timezone/timezone.dart' as tz;
 import '../data/local_db.dart';
 // Our Task.Priority would collide with flutter_local_notifications' Priority,
 // which is the one this file uses for Android notification importance.
+import '../models/app_update.dart';
 import '../models/task.dart' hide Priority;
+import '../utils/company.dart';
 import 'home_widget_service.dart';
 
 const _markDoneAction = 'mark_done';
 const _snoozeAction = 'snooze_1h';
+
+/// Payload prefix for update notifications. Keeps a tap from being mistaken
+/// for a task id when the response is routed by [_handleResponse].
+const _updatePayloadPrefix = 'update:';
+
+/// SharedPreferences keys for update-notification dedup and tap hand-off.
+const _shownUpdateKey = 'notifications.updateShown';
+const _pendingUpdateKey = 'notifications.pendingUpdate';
 
 /// A reminder inside this many minutes of the deadline is treated as
 /// critical: maximum importance, hard to miss.
@@ -28,6 +40,8 @@ const _reminderChannelId = 'deadlines_reminders_v2';
 const _reminderChannelName = 'Deadline reminders';
 const _alarmChannelId = 'deadlines_alarm_v2';
 const _alarmChannelName = 'Urgent deadline alerts';
+const _updateChannelId = 'deadlines_updates_v1';
+const _updateChannelName = 'App updates';
 const _channelsMigratedKey = 'notifications.channels_v2';
 
 const _reminderChannel = AndroidNotificationChannel(
@@ -47,6 +61,16 @@ const _alarmChannel = AndroidNotificationChannel(
   importance: Importance.max,
   playSound: true,
   enableVibration: true,
+  showBadge: true,
+);
+
+const _updateChannel = AndroidNotificationChannel(
+  _updateChannelId,
+  _updateChannelName,
+  description: 'Lets you know when a new version is ready to install',
+  importance: Importance.defaultImportance,
+  playSound: true,
+  enableVibration: false,
   showBadge: true,
 );
 
@@ -118,21 +142,47 @@ const _digestDetails = NotificationDetails(
   iOS: DarwinNotificationDetails(),
 );
 
+const _updateDetails = NotificationDetails(
+  android: AndroidNotificationDetails(
+    _updateChannelId,
+    _updateChannelName,
+    channelDescription: 'Lets you know when a new version is ready to install',
+    importance: Importance.defaultImportance,
+    priority: Priority.defaultPriority,
+    visibility: NotificationVisibility.public,
+    channelShowBadge: true,
+    playSound: true,
+  ),
+  iOS: DarwinNotificationDetails(),
+);
+
 /// Runs in whichever isolate the OS delivered the tap in — the running app,
 /// or (if the app was not alive) a fresh background isolate with no access
 /// to app state. Either way we go straight to the database.
 @pragma('vm:entry-point')
-void notificationBackgroundHandler(NotificationResponse response) {
-  _handleResponse(response);
+Future<void> notificationBackgroundHandler(NotificationResponse response) {
+  return _handleResponse(response);
 }
 
-void _foregroundHandler(NotificationResponse response) {
-  _handleResponse(response);
+Future<void> _foregroundHandler(NotificationResponse response) {
+  return _handleResponse(response);
 }
 
 Future<void> _handleResponse(NotificationResponse response) async {
-  final taskId = response.payload;
-  if (taskId == null || taskId.isEmpty) return;
+  final payload = response.payload;
+  if (payload == null || payload.isEmpty) return;
+
+  // Update taps carry a version/fingerprint instead of a task id. Record it
+  // for the app to consume on the next frame; this also runs in a background
+  // isolate after the app was killed, so SharedPreferences is the hand-off.
+  if (payload.startsWith(_updatePayloadPrefix)) {
+    await Notifications.instance._handleUpdateTap(
+      payload.substring(_updatePayloadPrefix.length),
+    );
+    return;
+  }
+
+  final taskId = payload;
 
   // This also runs in a fresh background isolate that never went through
   // init(), so make sure the plugin and timezone data are ready before
@@ -196,6 +246,13 @@ class Notifications {
   /// The "Test alert" notification, also outside the task id range.
   static const _testId = -424243;
 
+  /// The update prompt, outside both the task id and digest ranges.
+  static const _updateId = -424244;
+
+  /// Set when an update notification is tapped, so a live app can react
+  /// immediately. The SharedPreferences flag covers the cold-start case.
+  final ValueNotifier<bool> updateTapped = ValueNotifier<bool>(false);
+
   /// Native bridge for opening this app's reminder-channel settings page, so
   /// the user can pick the tone Android plays for reminders.
   static const _native = MethodChannel('deadline/notifications');
@@ -256,6 +313,7 @@ class Notifications {
       }
       await android.createNotificationChannel(_reminderChannel);
       await android.createNotificationChannel(_alarmChannel);
+      await android.createNotificationChannel(_updateChannel);
       _channelsReady = true;
     } catch (e) {
       // Recreate next launch: channel creation is idempotent, and the pref
@@ -297,6 +355,102 @@ class Notifications {
       return sample?.title;
     } catch (e) {
       debugPrint('Could not show the test reminder: $e');
+      return null;
+    }
+  }
+
+  // --- App updates ---------------------------------------------------------
+
+  /// Posts a single "Update available" notification for [update].
+  ///
+  /// Returns true only when a notification was actually shown. The same update
+  /// (same version, or the APK fingerprint when no version is published) is
+  /// never posted twice, so repeated launch/manual checks stay quiet.
+  Future<bool> showUpdateNotification(AppUpdate update) async {
+    try {
+      if (!await areNotificationsEnabled()) return false;
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString(_shownUpdateKey) == update.updateKey) return false;
+
+      await _ensureReady();
+      final body = update.latestVersion == null
+          ? 'A new version is ready — tap to install.'
+          : 'Version ${update.latestVersion} is ready — tap to install.';
+      // Carry the exact version/url across the tap, including a cold start.
+      final info = jsonEncode(<String, dynamic>{
+        'key': update.updateKey,
+        'url': update.url,
+        'version': update.latestVersion,
+      });
+      await _plugin.show(
+        _updateId,
+        'Update available',
+        body,
+        _updateDetails,
+        payload: '$_updatePayloadPrefix$info',
+      );
+      await prefs.setString(_shownUpdateKey, update.updateKey);
+      return true;
+    } catch (e) {
+      debugPrint('Could not show the update notification: $e');
+      return false;
+    }
+  }
+
+  /// Handles a tap on the update notification, in either isolate.
+  Future<void> _handleUpdateTap(String info) async {
+    if (info.isEmpty) return;
+    try {
+      await _ensureReady();
+      await _plugin.cancel(_updateId);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pendingUpdateKey, info);
+      updateTapped.value = true;
+    } catch (e) {
+      debugPrint('Could not record the update tap: $e');
+    }
+  }
+
+  /// Handles a notification tap that cold-started the app. The platform
+  /// callback may run in a background isolate, so also read the launch payload
+  /// on the main isolate as a fallback.
+  Future<void> handleLaunchNotification() async {
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      final payload = details?.notificationResponse?.payload;
+      if (payload != null && payload.startsWith(_updatePayloadPrefix)) {
+        await _handleUpdateTap(payload.substring(_updatePayloadPrefix.length));
+      }
+    } catch (e) {
+      debugPrint('Could not read the launch notification: $e');
+    }
+  }
+
+  /// Returns the update a notification was tapped for, clearing the flag.
+  Future<AppUpdate?> takePendingUpdate() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_pendingUpdateKey);
+      if (raw == null || raw.isEmpty) {
+        updateTapped.value = false;
+        return null;
+      }
+      await prefs.remove(_pendingUpdateKey);
+      updateTapped.value = false;
+
+      try {
+        final info = jsonDecode(raw) as Map<String, dynamic>;
+        return AppUpdate(
+          latestVersion: info['version'] as String?,
+          url: (info['url'] as String?) ?? Company.apkUrl,
+          updateKey: (info['key'] as String?) ?? raw,
+        );
+      } catch (_) {
+        // Older/foreign payloads were just the update key.
+        return AppUpdate(url: Company.apkUrl, updateKey: raw);
+      }
+    } catch (e) {
+      debugPrint('Could not read the pending update: $e');
       return null;
     }
   }

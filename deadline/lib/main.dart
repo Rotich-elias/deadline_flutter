@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'data/local_db.dart';
 import 'data/notes_store.dart';
 import 'data/task_store.dart';
+import 'models/app_update.dart';
 import 'services/app_lock_service.dart';
 import 'services/location_alerts.dart';
 import 'services/note_draft_service.dart';
@@ -193,14 +194,29 @@ class DeadlineApp extends StatefulWidget {
 
 class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
   bool _updateChecked = false;
+  bool _updateDialogShown = false;
+  DateTime? _lastResumeUpdateCheck;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    Notifications.instance.updateTapped.addListener(_onUpdateTapped);
+    widget.appLock.addListener(_onAppLockChanged);
     // Never block the first frame on permission dialogs, notification
     // scheduling or the network. The UI paints, then these run.
     WidgetsBinding.instance.addPostFrameCallback((_) => _afterFirstFrame());
+  }
+
+  void _onUpdateTapped() {
+    if (!Notifications.instance.updateTapped.value) return;
+    unawaited(_showPendingUpdate());
+  }
+
+  /// A tap may arrive while the PIN screen is up. Wait for the unlock instead
+  /// of dropping the prompt, so the notification still does something.
+  void _onAppLockChanged() {
+    if (!widget.appLock.locked) unawaited(_showPendingUpdate());
   }
 
   Future<void> _afterFirstFrame() async {
@@ -212,25 +228,61 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Reminder setup failed: $e');
     }
+    await Notifications.instance.handleLaunchNotification();
     unawaited(widget.sync.syncNow());
     unawaited(_checkForUpdates());
+    unawaited(_showPendingUpdate());
   }
 
-  /// Best-effort launch check. It waits until the app is unlocked so the
-  /// prompt never sits on top of the PIN screen.
+  /// Best-effort launch check. It always posts a notification; the in-app
+  /// prompt is held back while the PIN screen is up.
   Future<void> _checkForUpdates() async {
-    if (_updateChecked || widget.appLock.locked) return;
+    if (_updateChecked) return;
     _updateChecked = true;
+    await _performUpdateCheck();
+  }
 
+  /// Resume check, throttled so coming back to the app cannot hammer the URL.
+  Future<void> _checkForUpdatesOnResume() async {
+    final now = DateTime.now();
+    final last = _lastResumeUpdateCheck;
+    if (last != null && now.difference(last) < const Duration(hours: 24)) {
+      return;
+    }
+    _lastResumeUpdateCheck = now;
+    await _performUpdateCheck();
+  }
+
+  Future<void> _performUpdateCheck() async {
     final current = await PlatformBridge.appVersion();
     if (current == null || current.isEmpty || !mounted) return;
     final update = await const UpdateService().check(current);
-    if (update == null || !mounted || widget.appLock.locked) return;
+    if (update == null || !mounted) return;
+
+    // Safe to post even when locked; only the dialog must wait for unlock.
+    await Notifications.instance.showUpdateNotification(update);
+    if (!widget.appLock.locked) await _offerUpdateOnce(update, current);
+  }
+
+  Future<void> _offerUpdateOnce(AppUpdate update, String current) async {
+    if (_updateDialogShown || !mounted) return;
+    _updateDialogShown = true;
     await offerUpdate(context, update: update, currentVersion: current);
+  }
+
+  /// Opens the prompt after the update notification was tapped.
+  Future<void> _showPendingUpdate() async {
+    if (!mounted || widget.appLock.locked) return;
+    final update = await Notifications.instance.takePendingUpdate();
+    if (update == null || !mounted || widget.appLock.locked) return;
+    final current = await PlatformBridge.appVersion() ?? '';
+    await _offerUpdateOnce(update, current);
   }
 
   @override
   void dispose() {
+    Notifications.instance.updateTapped.removeListener(_onUpdateTapped);
+    widget.appLock.removeListener(_onAppLockChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -243,6 +295,8 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
       widget.store.load();
       widget.notesStore.load();
       widget.sync.syncNow();
+      unawaited(_checkForUpdatesOnResume());
+      unawaited(_showPendingUpdate());
     }
   }
 
