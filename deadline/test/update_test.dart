@@ -144,6 +144,44 @@ void main() {
       expect(update?.latestVersion, '1.0.25');
     });
 
+    test('reads the version from Content-Disposition after a redirect',
+        () async {
+      // Dart's http client keeps response.request.url as the original URL
+      // after a redirect, so the version only appears in this header.
+      final headers = {
+        'etag': '"v1"',
+        'content-disposition':
+            'attachment; filename="deadline-1.0.26-abc123.apk"',
+      };
+      final store = _MemoryStore();
+      final service = UpdateService(
+        url: _url,
+        client: _FakeServer(200, headers).client,
+        store: store,
+      );
+
+      final first = await service.check('1.0.25');
+      expect(first?.latestVersion, '1.0.26');
+      expect(first?.updateKey, '1.0.26');
+
+      // A second check with the same fingerprint must still offer the update:
+      // the installed version has not changed.
+      final repeat = UpdateService(
+        url: _url,
+        client: _FakeServer(200, headers).client,
+        store: store,
+      );
+      expect((await repeat.check('1.0.25'))?.latestVersion, '1.0.26');
+
+      // Once installed, the same APK is no longer an update.
+      final current = UpdateService(
+        url: _url,
+        client: _FakeServer(200, headers).client,
+        store: store,
+      );
+      expect(await current.check('1.0.26'), isNull);
+    });
+
     test('uses the version or APK fingerprint as the notification identity',
         () async {
       const versioned = 'https://example.test/deadline-1.0.25.apk';

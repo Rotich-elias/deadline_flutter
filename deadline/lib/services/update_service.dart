@@ -94,12 +94,14 @@ class UpdateService {
       final previous = await store.read(url);
       await store.write(url, fingerprint);
 
-      // The download URL redirects to a file whose name carries the version
-      // (e.g. `deadline-1.0.24-<hash>.apk`). That is more precise than the
-      // fingerprint: re-uploading the same version must not prompt again.
-      final finalUrl = res.request?.url.toString() ?? url;
-      final parsedVersion =
-          _versionFromUrl(finalUrl) ?? _versionFromUrl(url);
+      // The APK's real filename carries the version (e.g.
+      // `deadline-1.0.26-<hash>.apk`). Dart's http client reports the original
+      // request url after a redirect, so read Content-Disposition first — the
+      // version is there on the final 200 response. Fall back to the URL only
+      // for deployments that publish a versioned download link directly.
+      final parsedVersion = _versionFromHeaders(res.headers) ??
+          _versionFromUrl(res.request?.url.toString() ?? url) ??
+          _versionFromUrl(url);
       if (parsedVersion != null) {
         return AppUpdate.compareVersions(currentVersion, parsedVersion) < 0
             ? _available(parsedVersion, fingerprint)
@@ -127,25 +129,45 @@ class UpdateService {
       );
 
   /// Header keys from the http package are lower-cased, but be lenient.
-  static String _fingerprint(Map<String, String> headers) {
-    String? get(String key) {
-      for (final entry in headers.entries) {
-        if (entry.key.toLowerCase() == key) return entry.value.trim();
-      }
-      return null;
+  static String? _header(Map<String, String> headers, String key) {
+    for (final entry in headers.entries) {
+      if (entry.key.toLowerCase() == key) return entry.value.trim();
     }
+    return null;
+  }
 
+  static String _fingerprint(Map<String, String> headers) {
     return [
-      get('etag'),
-      get('last-modified'),
-      get('content-length'),
+      _header(headers, 'etag'),
+      _header(headers, 'last-modified'),
+      _header(headers, 'content-length'),
     ].where((value) => value != null && value.isNotEmpty).join('|');
   }
 
+  /// Reads `deadline-1.0.26-<hash>.apk` from a `Content-Disposition` header,
+  /// or from a redirect `Location`. Both are needed because Dart's http client
+  /// reports the original request url after following a redirect.
+  static String? _versionFromHeaders(Map<String, String> headers) {
+    final disposition = _header(headers, 'content-disposition');
+    if (disposition != null) {
+      final match = RegExp(r'filename\s*=\s*"?([^";]+)', caseSensitive: false)
+          .firstMatch(disposition);
+      if (match != null) {
+        final version = _versionFromFilename(match.group(1)!);
+        if (version != null) return version;
+      }
+    }
+    final location = _header(headers, 'location');
+    return location == null ? null : _versionFromUrl(location);
+  }
+
   /// Picks `1.0.25` out of a filename like `deadline-1.0.25.apk`, when present.
+  static String? _versionFromFilename(String name) =>
+      RegExp(r'(\d+(?:\.\d+){1,3})').firstMatch(name)?.group(1);
+
   static String? _versionFromUrl(String url) {
     final segments = Uri.tryParse(url)?.pathSegments ?? const <String>[];
     if (segments.isEmpty) return null;
-    return RegExp(r'(\d+(?:\.\d+){1,3})').firstMatch(segments.last)?.group(1);
+    return _versionFromFilename(segments.last);
   }
 }
