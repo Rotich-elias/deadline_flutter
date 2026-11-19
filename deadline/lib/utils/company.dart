@@ -5,4 +5,8 @@ class Company {
   static const name = 'teto technologies';
   static const websiteLabel = 'teto.co.ke';
   static const websiteUrl = 'https://teto.co.ke';
+
+  /// Where the latest APK is uploaded. The app checks this URL for changes;
+  /// no version file or API is needed. Update this if the download moves.
+  static const apkUrl = 'https://www.teto.co.ke/download/deadlines-notes';
 }

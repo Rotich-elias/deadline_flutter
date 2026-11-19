@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../models/app_update.dart';
 import '../services/platform_bridge.dart';
+import '../services/update_service.dart';
 import '../theme.dart';
 import '../utils/company.dart';
 import 'powered_by_footer.dart';
 import 'privacy_page.dart';
+import 'update_dialog.dart';
 
 /// Small About screen: app identity, installed version and the company link.
 class AboutPage extends StatefulWidget {
-  const AboutPage({super.key});
+  const AboutPage({super.key, this.updateService});
+
+  /// Injectable so tests (and alternate deployments) can point at a fake API.
+  final UpdateService? updateService;
 
   @override
   State<AboutPage> createState() => _AboutPageState();
@@ -16,6 +22,10 @@ class AboutPage extends StatefulWidget {
 
 class _AboutPageState extends State<AboutPage> {
   String? _version;
+  bool _checking = false;
+  AppUpdate? _available;
+
+  UpdateService get _updates => widget.updateService ?? const UpdateService();
 
   @override
   void initState() {
@@ -24,6 +34,36 @@ class _AboutPageState extends State<AboutPage> {
       if (!mounted || version == null || version.isEmpty) return;
       setState(() => _version = version);
     });
+  }
+
+  Future<void> _checkForUpdates() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+
+    final current = _version ?? await PlatformBridge.appVersion();
+    if (current == null || current.isEmpty) {
+      if (mounted) {
+        setState(() => _checking = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read the installed version.')),
+        );
+      }
+      return;
+    }
+
+    final update = await _updates.check(current);
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _available = update;
+    });
+    if (update == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You’re up to date.')),
+      );
+    } else {
+      await offerUpdate(context, update: update, currentVersion: current);
+    }
   }
 
   Future<void> _openWebsite() async {
@@ -124,6 +164,33 @@ class _AboutPageState extends State<AboutPage> {
                       style: TextStyle(fontSize: 14, color: Ink0.text)),
                   trailing: Icon(Icons.chevron_right, color: Ink0.muted),
                   onTap: _openPrivacy,
+                ),
+                Divider(height: 1, color: Ink0.line),
+                ListTile(
+                  key: const Key('about-update'),
+                  leading: _checking
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Ink0.muted,
+                          ),
+                        )
+                      : Icon(Icons.system_update_alt_outlined,
+                          color: Ink0.muted),
+                  title: Text('Check for updates',
+                      style: TextStyle(fontSize: 14, color: Ink0.text)),
+                  subtitle: _available == null
+                      ? null
+                      : Text(
+                          _available!.latestVersion == null
+                              ? 'New version available'
+                              : 'Version ${_available!.latestVersion} available',
+                          style: TextStyle(fontSize: 12, color: Ink0.muted),
+                        ),
+                  trailing: Icon(Icons.chevron_right, size: 16, color: Ink0.muted),
+                  onTap: _checking ? null : _checkForUpdates,
                 ),
               ],
             ),

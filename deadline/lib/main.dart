@@ -12,11 +12,13 @@ import 'services/note_draft_service.dart';
 import 'services/note_import.dart';
 import 'services/notifications.dart';
 import 'services/platform_bridge.dart';
+import 'services/update_service.dart';
 import 'sync/sync_service.dart';
 import 'theme.dart';
 import 'ui/app_lock_gate.dart';
 import 'ui/home_shell.dart';
 import 'ui/loading_page.dart';
+import 'ui/update_dialog.dart';
 
 /// Minimum time the branded loading page stays up, so a fast start does not
 /// flash it for a couple of frames.
@@ -190,6 +192,8 @@ class DeadlineApp extends StatefulWidget {
 }
 
 class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
+  bool _updateChecked = false;
+
   @override
   void initState() {
     super.initState();
@@ -209,6 +213,20 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
       debugPrint('Reminder setup failed: $e');
     }
     unawaited(widget.sync.syncNow());
+    unawaited(_checkForUpdates());
+  }
+
+  /// Best-effort launch check. It waits until the app is unlocked so the
+  /// prompt never sits on top of the PIN screen.
+  Future<void> _checkForUpdates() async {
+    if (_updateChecked || widget.appLock.locked) return;
+    _updateChecked = true;
+
+    final current = await PlatformBridge.appVersion();
+    if (current == null || current.isEmpty || !mounted) return;
+    final update = await const UpdateService().check(current);
+    if (update == null || !mounted || widget.appLock.locked) return;
+    await offerUpdate(context, update: update, currentVersion: current);
   }
 
   @override
