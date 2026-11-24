@@ -26,12 +26,16 @@ const _second = {
 
 class _MemorySeenStore implements AdvertSeenStore {
   final ids = <String>{};
+  int resetCalls = 0;
 
   @override
   Future<bool> isSeen(String id) async => ids.contains(id);
 
   @override
   Future<void> markSeen(String id) async => ids.add(id);
+
+  @override
+  Future<void> resetIfNeeded() async => resetCalls++;
 }
 
 http.Client _server(Object body, {int status = 200}) => http_testing.MockClient((request) async {
@@ -100,6 +104,23 @@ void main() {
 
       final adverts = await service.check('1.0.29');
       expect(adverts.map((advert) => advert.id), ['2']);
+    });
+
+    test('runs the seen-store migration before filtering', () async {
+      final store = _MemorySeenStore();
+      await store.markSeen('1');
+
+      final service = AdvertService(
+        url: _url,
+        client: _server({'adverts': [_first]}),
+        store: store,
+      );
+
+      expect(store.resetCalls, 0);
+      expect(await service.check('1.0.30'), isEmpty);
+      expect(store.resetCalls, 1);
+      expect(await service.check('1.0.30'), isEmpty);
+      expect(store.resetCalls, 2);
     });
 
     test('marks an advert as seen only when told to', () async {

@@ -204,6 +204,12 @@ class DeadlineApp extends StatefulWidget {
 }
 
 class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
+  // Dialogs are opened from this state, which sits above MaterialApp. Keys
+  // give them a valid navigator/scaffold context even at that level.
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
   bool _updateChecked = false;
   bool _updateDialogShown = false;
   DateTime? _lastResumeUpdateCheck;
@@ -312,18 +318,27 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
   Future<void> _drainPrompts() async {
     if (_promptsBusy || !mounted || widget.appLock.locked) return;
 
+    final navigator = _navigatorKey.currentState;
+    final messenger = _messengerKey.currentState;
+    final dialogContext = _navigatorKey.currentContext;
+    if (navigator == null || messenger == null || dialogContext == null) return;
+
     final advert = _pendingAdvert;
     if (advert != null) {
       _pendingAdvert = null;
       _promptsBusy = true;
       try {
-        await showAdvertDialog(context, advert: advert);
+        await showAdvertDialog(
+          dialogContext,
+          advert: advert,
+          navigator: navigator,
+          messenger: messenger,
+        );
+        // Only remember an advert after its dialog actually opened.
+        await const AdvertService().markSeen(advert);
+      } catch (e) {
+        debugPrint('Could not show advert: $e');
       } finally {
-        try {
-          await const AdvertService().markSeen(advert);
-        } catch (e) {
-          debugPrint('Could not remember advert $e');
-        }
         _promptsBusy = false;
       }
       await _drainPrompts();
@@ -335,7 +350,13 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
     _pendingUpdate = null;
     _promptsBusy = true;
     try {
-      await offerUpdate(context, update: pending.update, currentVersion: pending.current);
+      await offerUpdate(
+        dialogContext,
+        update: pending.update,
+        currentVersion: pending.current,
+        navigator: navigator,
+        messenger: messenger,
+      );
     } finally {
       _promptsBusy = false;
     }
@@ -411,6 +432,8 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
               : Brightness.dark,
         );
         return MaterialApp(
+          navigatorKey: _navigatorKey,
+          scaffoldMessengerKey: _messengerKey,
           title: 'Deadlines&Notes',
           debugShowCheckedModeBanner: false,
           theme: buildTheme(Brightness.light),

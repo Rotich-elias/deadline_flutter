@@ -10,9 +10,12 @@ Future<void> offerUpdate(
   BuildContext context, {
   required AppUpdate update,
   required String currentVersion,
+  NavigatorState? navigator,
+  ScaffoldMessengerState? messenger,
 }) async {
-  final navigator = Navigator.of(context);
-  final messenger = ScaffoldMessenger.of(context);
+  // Callers above MaterialApp must pass the app's navigator explicitly.
+  final nav = navigator ?? Navigator.of(context);
+  final msg = messenger ?? ScaffoldMessenger.of(context);
 
   final accepted = await showDialog<bool>(
     context: context,
@@ -44,11 +47,11 @@ Future<void> offerUpdate(
       ),
       actions: [
         TextButton(
-          onPressed: () => navigator.pop(false),
+          onPressed: () => nav.pop(false),
           child: const Text('Later'),
         ),
         FilledButton(
-          onPressed: () => navigator.pop(true),
+          onPressed: () => nav.pop(true),
           child: const Text('Update'),
         ),
       ],
@@ -58,7 +61,7 @@ Future<void> offerUpdate(
   if (accepted != true || !context.mounted) return;
   final opened = await PlatformBridge.openUrl(update.url);
   if (!opened && context.mounted) {
-    messenger.showSnackBar(SnackBar(
+    msg.showSnackBar(SnackBar(
       content: Text('Could not open a browser. Visit ${update.url}'),
     ));
   }

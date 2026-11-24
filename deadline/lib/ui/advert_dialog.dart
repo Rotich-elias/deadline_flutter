@@ -9,9 +9,13 @@ import '../theme.dart';
 Future<void> showAdvertDialog(
   BuildContext context, {
   required AppAdvert advert,
+  NavigatorState? navigator,
+  ScaffoldMessengerState? messenger,
 }) async {
-  final navigator = Navigator.of(context);
-  final messenger = ScaffoldMessenger.of(context);
+  // The caller may live above MaterialApp, where Navigator.of(context) cannot
+  // see the app's navigator. Explicit states keep the popup working there.
+  final nav = navigator ?? Navigator.of(context);
+  final msg = messenger ?? ScaffoldMessenger.of(context);
 
   final accepted = await showDialog<bool>(
     context: context,
@@ -47,12 +51,12 @@ Future<void> showAdvertDialog(
       ),
       actions: [
         TextButton(
-          onPressed: () => navigator.pop(false),
+          onPressed: () => nav.pop(false),
           child: const Text('Close'),
         ),
         if (advert.hasCta)
           FilledButton(
-            onPressed: () => navigator.pop(true),
+            onPressed: () => nav.pop(true),
             child: Text(advert.buttonLabel),
           ),
       ],
@@ -62,7 +66,7 @@ Future<void> showAdvertDialog(
   if (accepted != true || !advert.hasCta || !context.mounted) return;
   final opened = await PlatformBridge.openUrl(advert.ctaUrl!);
   if (!opened && context.mounted) {
-    messenger.showSnackBar(SnackBar(
+    msg.showSnackBar(SnackBar(
       content: Text('Could not open a browser. Visit ${advert.ctaUrl}'),
     ));
   }
