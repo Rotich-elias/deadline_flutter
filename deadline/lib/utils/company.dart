@@ -9,4 +9,7 @@ class Company {
   /// Where the latest APK is uploaded. The app checks this URL for changes;
   /// no version file or API is needed. Update this if the download moves.
   static const apkUrl = 'https://www.teto.co.ke/download/deadlines-notes';
+
+  /// Public JSON feed of launch adverts published in the Teto admin console.
+  static const advertUrl = 'https://www.teto.co.ke/api/adverts?app=deadlines-notes';
 }

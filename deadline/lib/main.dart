@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'data/local_db.dart';
 import 'data/notes_store.dart';
 import 'data/task_store.dart';
+import 'models/app_advert.dart';
 import 'models/app_update.dart';
+import 'services/advert_service.dart';
 import 'services/app_lock_service.dart';
 import 'services/location_alerts.dart';
 import 'services/note_draft_service.dart';
@@ -16,6 +18,7 @@ import 'services/platform_bridge.dart';
 import 'services/update_service.dart';
 import 'sync/sync_service.dart';
 import 'theme.dart';
+import 'ui/advert_dialog.dart';
 import 'ui/app_lock_gate.dart';
 import 'ui/home_shell.dart';
 import 'ui/loading_page.dart';
@@ -24,6 +27,14 @@ import 'ui/update_dialog.dart';
 /// Minimum time the branded loading page stays up, so a fast start does not
 /// flash it for a couple of frames.
 const _minSplash = Duration(milliseconds: 900);
+
+/// An update prompt waiting for the current dialog to finish.
+class _PendingUpdate {
+  const _PendingUpdate(this.update, this.current);
+
+  final AppUpdate update;
+  final String current;
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -197,6 +208,11 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
   bool _updateDialogShown = false;
   DateTime? _lastResumeUpdateCheck;
 
+  bool _advertChecked = false;
+  AppAdvert? _pendingAdvert;
+  _PendingUpdate? _pendingUpdate;
+  bool _promptsBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -216,7 +232,10 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
   /// A tap may arrive while the PIN screen is up. Wait for the unlock instead
   /// of dropping the prompt, so the notification still does something.
   void _onAppLockChanged() {
-    if (!widget.appLock.locked) unawaited(_showPendingUpdate());
+    if (!widget.appLock.locked) {
+      unawaited(_showPendingUpdate());
+      unawaited(_drainPrompts());
+    }
   }
 
   Future<void> _afterFirstFrame() async {
@@ -230,8 +249,23 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
     }
     await Notifications.instance.handleLaunchNotification();
     unawaited(widget.sync.syncNow());
+    unawaited(_checkForAdverts());
     unawaited(_checkForUpdates());
     unawaited(_showPendingUpdate());
+  }
+
+  /// One-shot launch check. Adverts are shown one at a time, newest first,
+  /// and held back while the PIN screen is up.
+  Future<void> _checkForAdverts() async {
+    if (_advertChecked) return;
+    _advertChecked = true;
+
+    final current = await PlatformBridge.appVersion() ?? '';
+    final adverts = await const AdvertService().check(current);
+    if (!mounted || adverts.isEmpty) return;
+
+    _pendingAdvert = adverts.first;
+    await _drainPrompts();
   }
 
   /// Best-effort launch check. It always posts a notification; the in-app
@@ -263,13 +297,49 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
 
     // Safe to post even when locked; only the dialog must wait for unlock.
     await Notifications.instance.showUpdateNotification(update);
-    if (!widget.appLock.locked) await _offerUpdateOnce(update, current);
+    _queueUpdate(update, current);
+    await _drainPrompts();
   }
 
-  Future<void> _offerUpdateOnce(AppUpdate update, String current) async {
-    if (_updateDialogShown || !mounted) return;
+  void _queueUpdate(AppUpdate update, String current) {
+    if (_updateDialogShown || _pendingUpdate != null) return;
     _updateDialogShown = true;
-    await offerUpdate(context, update: update, currentVersion: current);
+    _pendingUpdate = _PendingUpdate(update, current);
+  }
+
+  /// Serialises the advert and update popups so they never stack. Adverts take
+  /// priority on launch; the update prompt follows as soon as one is dismissed.
+  Future<void> _drainPrompts() async {
+    if (_promptsBusy || !mounted || widget.appLock.locked) return;
+
+    final advert = _pendingAdvert;
+    if (advert != null) {
+      _pendingAdvert = null;
+      _promptsBusy = true;
+      try {
+        await showAdvertDialog(context, advert: advert);
+      } finally {
+        try {
+          await const AdvertService().markSeen(advert);
+        } catch (e) {
+          debugPrint('Could not remember advert $e');
+        }
+        _promptsBusy = false;
+      }
+      await _drainPrompts();
+      return;
+    }
+
+    final pending = _pendingUpdate;
+    if (pending == null) return;
+    _pendingUpdate = null;
+    _promptsBusy = true;
+    try {
+      await offerUpdate(context, update: pending.update, currentVersion: pending.current);
+    } finally {
+      _promptsBusy = false;
+    }
+    await _drainPrompts();
   }
 
   /// Opens the prompt after the update notification was tapped.
@@ -278,7 +348,8 @@ class _DeadlineAppState extends State<DeadlineApp> with WidgetsBindingObserver {
     final update = await Notifications.instance.takePendingUpdate();
     if (update == null || !mounted || widget.appLock.locked) return;
     final current = await PlatformBridge.appVersion() ?? '';
-    await _offerUpdateOnce(update, current);
+    _queueUpdate(update, current);
+    await _drainPrompts();
   }
 
   @override
